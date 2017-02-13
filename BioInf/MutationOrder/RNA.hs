@@ -102,7 +102,8 @@ instance Serialize  Landscape
 -- |
 --
 -- TODO prime candidate for parallelization. ViennaRNA-bindings currently
--- does not allow parallel runs!
+-- does not allow parallel runs! It would be possible to consider
+-- externalizing this, but for now we just run single-threaded.
 
 createRNAlandscape :: ByteString -> ByteString -> Landscape
 createRNAlandscape origin mutation = Landscape

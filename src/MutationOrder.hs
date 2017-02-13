@@ -28,6 +28,7 @@ oOptions = Options
 main :: IO ()
 main = do
   Options{..} <- cmdArgs oOptions
-  let filePrefix = maybe (takeBaseName infile) id outprefix
-  runHoxCluster fillweight fillstyle temperature infile filePrefix
+  return ()
+--  let filePrefix = maybe (takeBaseName infile) id outprefix
+--  runHoxCluster fillweight fillstyle temperature infile filePrefix
 
