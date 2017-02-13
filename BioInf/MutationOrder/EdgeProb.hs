@@ -1,6 +1,8 @@
 
 module BioInf.MutationOrder.EdgeProb where
 
+{-
+
 import           Control.Arrow (second)
 import           Control.Monad (forM_)
 import           Data.List (nub,sort)
@@ -76,4 +78,6 @@ edgeProbScoreMat (ScoreMat mat ns) xs' = ScoreMat m ns
   where m = fromAssocs l h 0 xs
         (l,h) = bounds mat
         xs = [ ((Z:.f:.t),p) | (f :-> t, p) <- xs' ]
+
+-}
 

@@ -22,6 +22,10 @@
 -- TODO All this should be wrapped and available as a function. not just
 -- providing output files.
 
+module BioInf.MutationOrder where
+
+{-
+
 module BioInf.HoxCluster
   ( runHoxCluster
   , FillWeight (..)
@@ -110,4 +114,6 @@ runHoxCluster fw fs temperature inFile filePrefix = do
     hPrintf hrun "Maximal Log-Probability Path Score: %6.3f\n" maxP
     forM_ maxPcoopts (T.hPutStrLn hrun)
     hPrintf hrun "\n"
+
+-}
 

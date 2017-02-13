@@ -8,7 +8,9 @@
 -- boundary should be created to calculate begin/end probabilities
 -- separately.
 
-module BioInf.HoxCluster.MinDist where
+module BioInf.MutationOrder.MinDist where
+
+{-
 
 import           Control.Arrow (second)
 import           Control.Monad (forM_)
@@ -202,5 +204,7 @@ test t fp = do
   putStrLn ""
   forM_ ps $ \(_,Exp p) -> printf "%0.3f  " (exp p)
   putStrLn ""
+-}
+
 -}
 

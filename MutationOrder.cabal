@@ -11,7 +11,7 @@ license-file:   LICENSE
 build-type:     Simple
 stability:      experimental
 cabal-version:  >= 1.10.0
-tested-with:    GHC == 7.8.4, GHC == 7.10.3, GHC == 8.0.1
+tested-with:    GHC == 7.8.4, GHC == 7.10.3, GHC == 8.0.1, GHC == 8.0.2
 synopsis:       Most likely order of mutation events in RNA
 description:
                 Determine the most likely order in which single nucleotide
@@ -32,11 +32,14 @@ Extra-Source-Files:
 
 library
   build-depends: base                   >= 4.7    &&  < 5.0
+               , bytestring
+               , deepseq                >= 1.4
                , filepath
                , log-domain             >= 0.10
                , parallel               >= 3.2
                , text                   >= 1.0
                , vector                 >= 0.11
+               , vector-strategies      >= 0.4
                --
                , ADPfusion              == 0.5.2.*
                , ADPfusionSet           == 0.0.0.*
@@ -44,12 +47,15 @@ library
                , PrimitiveArray         == 0.8.0.*
                , PrimitiveArray-Pretty  == 0.0.0.*
                , ShortestPathProblems   == 0.0.0.*
+               , ViennaRNA-bindings     == 0.225.1.*
   exposed-modules:
     BioInf.MutationOrder
-    BioInf.MutationOrder.MinDist
-    BioInf.MutationOrder.EdgeProb
-    BioInf.MutationOrder.ScoreMat
+    BioInf.MutationOrder.RNA
+--    BioInf.MutationOrder.MinDist
+--    BioInf.MutationOrder.EdgeProb
+--    BioInf.MutationOrder.ScoreMat
   default-extensions: BangPatterns
+                    , DeriveGeneric
                     , FlexibleContexts
                     , GADTs
                     , MultiParamTypeClasses
