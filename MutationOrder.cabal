@@ -34,6 +34,7 @@ library
   build-depends: base                   >= 4.7    &&  < 5.0
                , filepath
                , log-domain             >= 0.10
+               , parallel               >= 3.2
                , text                   >= 1.0
                , vector                 >= 0.11
                --
