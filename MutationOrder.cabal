@@ -33,6 +33,8 @@ Extra-Source-Files:
 library
   build-depends: base                   >= 4.7    &&  < 5.0
                , bytestring
+               , cereal                 >= 0.5
+               , cereal-vector          >= 0.2
                , deepseq                >= 1.4
                , filepath
                , log-domain             >= 0.10
@@ -40,6 +42,7 @@ library
                , text                   >= 1.0
                , vector                 >= 0.11
                , vector-strategies      >= 0.4
+               , zlib                   >= 0.6
                --
                , ADPfusion              == 0.5.2.*
                , ADPfusionSet           == 0.0.0.*

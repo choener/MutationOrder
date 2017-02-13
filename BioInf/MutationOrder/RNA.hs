@@ -10,15 +10,19 @@
 
 module BioInf.MutationOrder.RNA where
 
+import           Codec.Compression.GZip (compress,decompress)
 import           Control.Arrow (second)
 import           Control.DeepSeq
 import           Control.Parallel.Strategies
 import           Data.ByteString (ByteString)
 import           Data.Maybe (catMaybes)
+import           Data.Serialize
+import           Data.Vector.Serialize
 import           Data.Vector.Strategies
 import           Debug.Trace
 import           GHC.Generics
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import           System.IO.Unsafe (unsafePerformIO)
@@ -33,19 +37,20 @@ import BioInf.ViennaRNA.Bindings
 -- one?
 
 data RNA = RNA
-  { mutationSet :: VU.Vector (Int,Char)
+  { mutationSet     :: !(VU.Vector (Int,Char))
     -- ^ we store just the mutation set, since this is more sparse and
     -- gives access to the mutational events.
-  , primarySequence :: ByteString
+  , primarySequence :: !ByteString
     -- ^ store RNA sequence too, for now
-  , mfeStructure :: ByteString
+  , mfeStructure    :: !ByteString
     -- ^ the mfe structure we get
-  , mfeEnergy :: Double
+  , mfeEnergy       :: !Double
     -- ^ mfe energy of the structure
   }
   deriving (Show,Eq,Generic)
 
-instance NFData RNA
+instance NFData     RNA
+instance Serialize  RNA
 
 -- | Given the primary sequence and the mutation set, fill the 'RNA'
 -- structure.
@@ -79,25 +84,32 @@ insertMutations ms s' = VU.foldl' go s' ms
           in  BS.concat [h, BS.singleton c, BS.drop 1 t]
 
 data Landscape = Landscape
-  { rnas :: V.Vector RNA
+  { rnas                  :: !(V.Vector RNA)
     -- ^ the individual RNA mutations. The index should be calculated from
     -- @linearIndex 0 high mutationSet@
-  , mutationCount :: Int
+  , mutationCount         :: !Int
     -- ^ how many nucleotides are mutated in total
+  , landscapeOrigin       :: !ByteString
+    -- ^ the ancestral sequence
+  , landscapeDestination  :: !ByteString
+    -- ^ the final sequence
   }
   deriving (Show,Eq,Generic)
 
-instance NFData Landscape
+instance NFData     Landscape
+instance Serialize  Landscape
 
 -- |
 --
--- TODO prime candidate for parallelization. However, we need to carefully
--- walk along @rnas@ so that we do not spawn too many threads.
+-- TODO prime candidate for parallelization. ViennaRNA-bindings currently
+-- does not allow parallel runs!
 
-createRNAlandscape :: Int -> ByteString -> ByteString -> Landscape
-createRNAlandscape chunkSize origin mutation = Landscape
-  { rnas = (V.fromList $ map (mkRNA origin) mus) `using` (parVector chunkSize)
-  , mutationCount = length . filter (>1) . map length $ pms
+createRNAlandscape :: ByteString -> ByteString -> Landscape
+createRNAlandscape origin mutation = Landscape
+  { rnas                  = (V.fromList $ map (mkRNA origin) mus) -- `using` (parVector chunkSize)
+  , mutationCount         = length . filter (>1) . map length $ pms
+  , landscapeOrigin       = origin
+  , landscapeDestination  = mutation
   }
   where
     mus = map (VU.fromList . catMaybes)
@@ -107,4 +119,16 @@ createRNAlandscape chunkSize origin mutation = Landscape
     pms = zipWith3 genM (BS.unpack origin) (BS.unpack mutation) [0..]
     genM a b k | a==b = [Nothing]
                | otherwise = [Nothing,Just (k,b)]
+
+-- | Write a generated landscape to disk.
+
+toFile :: FilePath -> Landscape -> IO ()
+toFile fp = BSL.writeFile fp . compress . encodeLazy
+
+fromFile :: FilePath -> IO Landscape
+fromFile fp = do
+  i <- BSL.readFile fp
+  case (decodeLazy . decompress $ i) of
+    Left err -> error $ "BioInf.MutationOrder.RNA.fromFile: " ++ err
+    Right ls -> return ls
 
