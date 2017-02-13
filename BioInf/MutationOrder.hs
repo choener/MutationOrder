@@ -24,6 +24,42 @@
 
 module BioInf.MutationOrder where
 
+import qualified Data.ByteString.Char8 as BS
+import           System.Directory (doesFileExist)
+
+import           BioInf.MutationOrder.RNA
+
+
+
+runMutationOrder = do
+  let ancestral = BS.pack "UGAAAUGGAGGAGAAAUUACAGCAAUUUAUCAGCUGAAAUUAUAGGUGUAGACACAUGUCAGCAGUGGAAAUAGUUUCUAUCAAAAUUAAAGUAUUUAGAGAUUUUCCUCAAAUUUCA"
+  let current   = BS.pack "UGAAACGGAGGAGACGUUACAGCAACGUGUCAGCUGAAAUGAUGGGCGUAGACGCACGUCAGCGGCGGAAAUGGUUUCUAUCAAAAUGAAAGUGUUUAGAGAUUUUCCUCAAGUUUCA"
+  let ls = createRNAlandscape ancestral current
+  print $ mutationCount ls
+  toFile "dump" ls
+
+-- | @withDumpFile@ is like @idIO :: a -> IO a@ in that it returns the data
+-- we give to the function. However, in case the dump file exists, we read
+-- it and return its contents, instead of recalculating. If it does not
+-- exist, we dump the data in addition to returning it. This forces the
+-- @Landscape@.
+
+withDumpFile
+  :: FilePath
+  -- ^ The path we store the serialized and compressed dump in
+  -> Landscape
+  -- ^ the element which is to be serialized in the dump, or which would be
+  -- the data in the dump
+  -> IO Landscape
+  -- ^ the data we put in, but maybe taken from the dump file
+withDumpFile fp l = do
+  dfe <- doesFileExist fp
+  if dfe then
+    fromFile fp
+  else do
+    toFile fp l
+    return l
+
 {-
 
 module BioInf.HoxCluster

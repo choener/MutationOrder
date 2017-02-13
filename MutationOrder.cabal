@@ -36,6 +36,7 @@ library
                , cereal                 >= 0.5
                , cereal-vector          >= 0.2
                , deepseq                >= 1.4
+               , directory
                , filepath
                , log-domain             >= 0.10
                , parallel               >= 3.2

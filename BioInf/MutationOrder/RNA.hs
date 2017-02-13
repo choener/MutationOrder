@@ -107,12 +107,14 @@ instance Serialize  Landscape
 
 createRNAlandscape :: ByteString -> ByteString -> Landscape
 createRNAlandscape origin mutation = Landscape
-  { rnas                  = (V.fromList $ map (mkRNA origin) mus) -- `using` (parVector chunkSize)
+  { rnas                  = rs -- `using` (parVector chunkSize)
   , mutationCount         = length . filter (>1) . map length $ pms
   , landscapeOrigin       = origin
   , landscapeDestination  = mutation
   }
   where
+    rs  = V.fromList $ zipWith talk mus [0..]
+    talk s c = (if (c `mod` 1000 == 0) then traceShow c else id) mkRNA origin s
     mus = map (VU.fromList . catMaybes)
         . sequence
         $ pms
