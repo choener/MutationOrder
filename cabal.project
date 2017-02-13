@@ -1,0 +1,10 @@
+packages: .
+          ../Lib-ADPfusion
+          ../Lib-ADPfusionSet
+          ../Lib-DPutils
+          ../Lib-FormalGrammars
+          ../Lib-OrderedBits
+          ../Lib-PrimitiveArray
+          ../Lib-PrimitiveArray-Pretty
+          ../Lib-ShortestPathProblems
+
