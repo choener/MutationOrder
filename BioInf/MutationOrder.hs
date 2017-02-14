@@ -22,21 +22,36 @@
 -- TODO All this should be wrapped and available as a function. not just
 -- providing output files.
 
-module BioInf.MutationOrder where
+module BioInf.MutationOrder
+  ( module BioInf.MutationOrder
+  , FillWeight (..)
+  , FillStyle (..)
+  ) where
 
 import qualified Data.ByteString.Char8 as BS
 import           System.Directory (doesFileExist)
+import           Data.ByteString (ByteString)
+
+import           Diagrams.TwoD.ProbabilityGrid
 
 import           BioInf.MutationOrder.RNA
 
 
 
-runMutationOrder = do
-  let ancestral = BS.pack "UGAAAUGGAGGAGAAAUUACAGCAAUUUAUCAGCUGAAAUUAUAGGUGUAGACACAUGUCAGCAGUGGAAAUAGUUUCUAUCAAAAUUAAAGUAUUUAGAGAUUUUCCUCAAAUUUCA"
-  let current   = BS.pack "UGAAACGGAGGAGACGUUACAGCAACGUGUCAGCUGAAAUGAUGGGCGUAGACGCACGUCAGCGGCGGAAAUGGUUUCUAUCAAAAUGAAAGUGUUUAGAGAUUUUCCUCAAGUUUCA"
-  let ls = createRNAlandscape ancestral current
+runMutationOrder verbose fw fs workdb temperature [ancestralFP,currentFP] = do
+  ancestral <- stupidReader ancestralFP
+  current   <- stupidReader currentFP
+  let ls = createRNAlandscape verbose ancestral current
   print $ mutationCount ls
-  toFile "dump" ls
+  toFile workdb ls
+
+-- | Stupid fasta reader
+
+stupidReader :: FilePath -> IO ByteString
+stupidReader fp = do
+  inp <- BS.lines <$> BS.readFile fp
+  let xs = filter (\x -> not (BS.null x) && BS.head x /= '>') inp
+  return $ BS.concat xs
 
 -- | @withDumpFile@ is like @idIO :: a -> IO a@ in that it returns the data
 -- we give to the function. However, in case the dump file exists, we read

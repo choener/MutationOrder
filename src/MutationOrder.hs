@@ -9,8 +9,8 @@ import BioInf.MutationOrder
 
 
 data Options = Options
-  { infile      :: FilePath
-  , outprefix   :: Maybe String
+  { infiles     :: [FilePath]
+  , workdb      :: FilePath
   , temperature :: Double
   , fillweight  :: FillWeight
   , fillstyle   :: FillStyle
@@ -18,17 +18,17 @@ data Options = Options
   deriving (Show,Data,Typeable)
 
 oOptions = Options
-  { infile      = def &= args
-  , outprefix   = Nothing &= help "prefix for the output files, calculated from input if not given"
+  { infiles     = def &= args
+  , workdb      = def &= help "name of the database to store intermediates in"
   , temperature = 0.01  &= help "lower temperatures favor the more optimal paths, defaults to 0.01"
   , fillweight  = FWlog
   , fillstyle   = FSfull
-  }
+  } &= verbosity
 
 main :: IO ()
 main = do
   Options{..} <- cmdArgs oOptions
+  isL <- isLoud
   return ()
---  let filePrefix = maybe (takeBaseName infile) id outprefix
---  runHoxCluster fillweight fillstyle temperature infile filePrefix
+  runMutationOrder isL fillweight fillstyle workdb temperature infiles
 

@@ -10,6 +10,7 @@
 
 module BioInf.MutationOrder.RNA where
 
+import           Data.Bits
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Arrow (second)
 import           Control.DeepSeq
@@ -26,8 +27,12 @@ import qualified Data.ByteString.Lazy as BSL
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import           System.IO.Unsafe (unsafePerformIO)
+import qualified Data.HashMap.Strict as HM
+import           Data.Serialize.Instances
 
-import BioInf.ViennaRNA.Bindings
+import qualified Data.Bijection.HashMap as B
+import           BioInf.ViennaRNA.Bindings
+import qualified Data.PrimitiveArray as PA
 
 
 
@@ -84,7 +89,7 @@ insertMutations ms s' = VU.foldl' go s' ms
           in  BS.concat [h, BS.singleton c, BS.drop 1 t]
 
 data Landscape = Landscape
-  { rnas                  :: !(V.Vector RNA)
+  { rnas                  :: HM.HashMap (PA.BitSet PA.I) RNA
     -- ^ the individual RNA mutations. The index should be calculated from
     -- @linearIndex 0 high mutationSet@
   , mutationCount         :: !Int
@@ -105,16 +110,16 @@ instance Serialize  Landscape
 -- does not allow parallel runs! It would be possible to consider
 -- externalizing this, but for now we just run single-threaded.
 
-createRNAlandscape :: ByteString -> ByteString -> Landscape
-createRNAlandscape origin mutation = Landscape
+createRNAlandscape :: Bool -> ByteString -> ByteString -> Landscape
+createRNAlandscape verbose origin mutation = Landscape
   { rnas                  = rs -- `using` (parVector chunkSize)
   , mutationCount         = length . filter (>1) . map length $ pms
   , landscapeOrigin       = origin
   , landscapeDestination  = mutation
   }
   where
-    rs  = V.fromList $ zipWith talk mus [0..]
-    talk s c = (if (c `mod` 1000 == 0) then traceShow c else id) mkRNA origin s
+    rs  = HM.fromList . map pairWithBitSet $ zipWith talk mus [0..]
+    talk s c = (if (c `mod` 1000 == 0 && verbose) then traceShow c else id) mkRNA origin s
     mus = map (VU.fromList . catMaybes)
         . sequence
         $ pms
@@ -122,6 +127,21 @@ createRNAlandscape origin mutation = Landscape
     pms = zipWith3 genM (BS.unpack origin) (BS.unpack mutation) [0..]
     genM a b k | a==b = [Nothing]
                | otherwise = [Nothing,Just (k,b)]
+    -- pair each @RNA@ with the correct bitset
+    pairWithBitSet r = (calcBitSet zeroBits . map fst . VU.toList $ mutationSet r, r)
+    -- calculate the bitset pattern for this mutation
+    calcBitSet bs [] = bs
+    calcBitSet bs (x':xs) =
+      let x = maybe (error $ "calcBitSet") id $ B.lookupL mutbit x'
+      in  calcBitSet (bs `setBit` x) xs
+    -- bijection between mutation position and bit position
+    -- @BitSet Bit   <->   Mutated Bit@
+    mutbit :: B.BimapHashMap Int Int
+    mutbit = B.fromList
+           . zipWith (flip (,)) [0 :: Int ..]
+           . catMaybes $ zipWith3 genB (BS.unpack origin) (BS.unpack mutation) [0 :: Int ..]
+    genB a b k | a == b    = Nothing
+               | otherwise = Just $ k
 
 -- | Write a generated landscape to disk.
 

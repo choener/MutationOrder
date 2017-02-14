@@ -40,13 +40,16 @@ library
                , filepath
                , log-domain             >= 0.10
                , parallel               >= 3.2
+               , serialize-instances    >= 0.1
                , text                   >= 1.0
+               , unordered-containers   >= 0.2.7
                , vector                 >= 0.11
                , vector-strategies      >= 0.4
                , zlib                   >= 0.6
                --
                , ADPfusion              == 0.5.2.*
                , ADPfusionSet           == 0.0.0.*
+               , bimaps                 == 0.1.0.*
                , FormalGrammars         == 0.3.1.*
                , PrimitiveArray         == 0.8.0.*
                , PrimitiveArray-Pretty  == 0.0.0.*
