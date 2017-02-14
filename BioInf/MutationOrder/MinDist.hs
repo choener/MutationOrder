@@ -89,6 +89,18 @@ aPretty Landscape{..} = SigMinDist
   }
 {-# Inline aPretty #-}
 
+-- | Count co-optimals
+
+aCount :: Monad m => Landscape -> SigMinDist m Integer [Integer] (Int:.From:.To) Int
+aCount Landscape{..} = SigMinDist
+  { edge = \x (fset:.From f:.To t) -> x
+  , mpty = \()  -> 1
+  , node = \n   -> 1
+  , fini = id
+  , h    = \xs -> SM.foldl' (+) 0 xs >>= \x -> return [x]
+  }
+{-# Inline aCount #-}
+
 {-
 -- | Before using @aInside@ the @ScoreMat@ needs to be scaled
 -- appropriately! Due to performance reasons we don't want to do this
@@ -140,6 +152,16 @@ backtrackMinDist1 landscape (Z:.ts1:.u) = unId $ axiom b
                         :: Z:.BT1 Double Text:.BTU Double Text
 {-# NoInline backtrackMinDist1 #-}
 
+countBackMinDist1 :: Landscape -> Z:.TS1 Double:.U Double -> [Integer]
+countBackMinDist1 landscape (Z:.ts1:.u) = unId $ axiom b
+  where !(Z:.bt1:.b) = gMinDist (aMinDist landscape <|| aCount landscape)
+                            (toBacktrack ts1 (undefined :: Id a -> Id a))
+                            (toBacktrack u   (undefined :: Id a -> Id a))
+                            EdgeWithSet
+                            Singleton
+                        :: Z:.BT1 Double Integer:.BTU Double Integer
+{-# NoInline countBackMinDist1 #-}
+
 -- | Given the @Set1@ produced in @forwardMinDist1@ we can now extract the
 -- co-optimal paths using the @Set1 -> ()@ index change.
 --
@@ -151,6 +173,12 @@ runCoOptDist landscape = (unId $ axiom fwdu,bs)
   where !(Z:.fwd1:.fwdu) = forwardMinDist1 landscape
         bs = backtrackMinDist1 landscape (Z:.fwd1:.fwdu)
 {-# NoInline runCoOptDist #-}
+
+runCount :: Landscape -> (Double,[Integer])
+runCount landscape = (unId $ axiom fwdu,bs)
+  where !(Z:.fwd1:.fwdu) = forwardMinDist1 landscape
+        bs = countBackMinDist1 landscape (Z:.fwd1:.fwdu)
+{-# NoInline runCount #-}
 
 {-
 -- | Extract the individual partition scores.

@@ -53,6 +53,8 @@ runMutationOrder verbose fw fs workdb temperature [ancestralFP,currentFP] = do
   printf "Best energy gain: %10.4f\n" e
   printf "Number of co-optimal paths: %10d\n" (length $ take 1000000 bs)
   forM_ (take 30 bs) T.putStrLn
+  let (_,cs) = runCount ls
+  print cs
 
 -- | Stupid fasta reader
 
