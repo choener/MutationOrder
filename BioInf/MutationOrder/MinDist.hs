@@ -43,11 +43,11 @@ aMinDist Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                       in  -- traceShow (BitSet fset, BitSet fset `setBit` f `setBit` t) $
-                                          x + mfeEnergy trna - mfeEnergy frna
+                                          x + centroidEnergy trna - centroidEnergy frna
   , mpty = \() -> 0
   , node = \n -> let frna = rnas HM.! (BitSet 0)
                      trna = rnas HM.! (BitSet 0 `setBit` n)
-                 in  mfeEnergy trna - mfeEnergy frna
+                 in  centroidEnergy trna - centroidEnergy frna
   , fini = id
   , h    = SM.foldl' min 999999
   }
@@ -78,7 +78,7 @@ aPretty :: Monad m => Landscape -> SigMinDist m Text [Text] (Int:.From:.To) Int
 aPretty Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
-                                          e = mfeEnergy trna - mfeEnergy frna
+                                          e = centroidEnergy trna - centroidEnergy frna
                                       in  T.concat
                                             [ x
                                             , "\n"
@@ -88,9 +88,9 @@ aPretty Landscape{..} = SigMinDist
   , mpty = \()  -> ""
   , node = \n   -> let frna = rnas HM.! (BitSet 0)
                        trna = rnas HM.! (BitSet 0 `setBit` n)
-                       e    = mfeEnergy trna - mfeEnergy frna
+                       e    = centroidEnergy trna - centroidEnergy frna
                    in  T.concat
-                        [ T.pack $ printf "ancestral        %5.1f   " (mfeEnergy frna)
+                        [ T.pack $ printf "ancestral        %5.1f   " (centroidEnergy frna)
                         , T.pack $ BS.unpack $ primarySequence frna
                         , "\n"
                         , T.pack $ printf "ances -> %5d   %5.1f   " n e
