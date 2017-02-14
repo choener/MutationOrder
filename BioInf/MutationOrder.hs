@@ -28,15 +28,19 @@ module BioInf.MutationOrder
   , FillStyle (..)
   ) where
 
-import           Control.Monad (unless)
+import           Control.Monad (unless,forM_)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           System.Directory (doesFileExist)
 import           System.Exit (exitFailure)
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
+import           Text.Printf
 
 import           Diagrams.TwoD.ProbabilityGrid
 
 import           BioInf.MutationOrder.RNA
+import           BioInf.MutationOrder.MinDist
 
 
 
@@ -45,7 +49,10 @@ runMutationOrder verbose fw fs workdb temperature [ancestralFP,currentFP] = do
   current   <- stupidReader currentFP
   ls <- withDumpFile workdb ancestral current $ createRNAlandscape verbose ancestral current
   print $ mutationCount ls
-  return ()
+  let (e,bs) = runCoOptDist ls
+  printf "Best energy gain: %10.4f\n" e
+  printf "Number of co-optimal paths: %10d\n" (length $ take 1000000 bs)
+  forM_ (take 30 bs) T.putStrLn
 
 -- | Stupid fasta reader
 
@@ -79,7 +86,7 @@ withDumpFile fp ancestral current l = do
     ls <- fromFile fp
     -- now we check if we have a sane DB file
     unless (landscapeOrigin ls == ancestral && landscapeDestination ls == current) $ do
-      putStrLn "ancestral of target sequence do not match those stored in the work database"
+      putStrLn "ancestral or target sequence do not match those stored in the work database"
       putStrLn $ "given ancestral: " ++ BS.unpack ancestral
       putStrLn $ "DB    ancestral: " ++ (BS.unpack $ landscapeOrigin ls)
       putStrLn $ "given current:   " ++ BS.unpack current

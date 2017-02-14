@@ -58,7 +58,7 @@ library
   exposed-modules:
     BioInf.MutationOrder
     BioInf.MutationOrder.RNA
---    BioInf.MutationOrder.MinDist
+    BioInf.MutationOrder.MinDist
 --    BioInf.MutationOrder.EdgeProb
 --    BioInf.MutationOrder.ScoreMat
   default-extensions: BangPatterns
@@ -68,6 +68,7 @@ library
                     , MultiParamTypeClasses
                     , OverloadedStrings
                     , QuasiQuotes
+                    , RecordWildCards
                     , TemplateHaskell
                     , TypeFamilies
                     , TypeOperators
