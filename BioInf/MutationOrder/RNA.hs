@@ -80,8 +80,8 @@ mkRNA inp' ms = RNA
   , primarySequence   = inp
   , mfeStructure      = s
   , mfeEnergy         = e
-  , centroidStructure = BS.empty
-  , centroidEnergy    = 0
+  , centroidStructure = cS
+  , centroidEnergy    = cE
   }
   where
     inp   = insertMutations ms inp'
