@@ -28,9 +28,11 @@ module BioInf.MutationOrder
   , FillStyle (..)
   ) where
 
+import           Control.Monad (unless)
+import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           System.Directory (doesFileExist)
-import           Data.ByteString (ByteString)
+import           System.Exit (exitFailure)
 
 import           Diagrams.TwoD.ProbabilityGrid
 
@@ -41,9 +43,9 @@ import           BioInf.MutationOrder.RNA
 runMutationOrder verbose fw fs workdb temperature [ancestralFP,currentFP] = do
   ancestral <- stupidReader ancestralFP
   current   <- stupidReader currentFP
-  let ls = createRNAlandscape verbose ancestral current
+  ls <- withDumpFile workdb ancestral current $ createRNAlandscape verbose ancestral current
   print $ mutationCount ls
-  toFile workdb ls
+  return ()
 
 -- | Stupid fasta reader
 
@@ -62,15 +64,28 @@ stupidReader fp = do
 withDumpFile
   :: FilePath
   -- ^ The path we store the serialized and compressed dump in
+  -> ByteString
+  -- ^ ancestral / origin sequence
+  -> ByteString
+  -- ^ destination sequence
   -> Landscape
   -- ^ the element which is to be serialized in the dump, or which would be
   -- the data in the dump
   -> IO Landscape
   -- ^ the data we put in, but maybe taken from the dump file
-withDumpFile fp l = do
+withDumpFile fp ancestral current l = do
   dfe <- doesFileExist fp
-  if dfe then
-    fromFile fp
+  if dfe then do
+    ls <- fromFile fp
+    -- now we check if we have a sane DB file
+    unless (landscapeOrigin ls == ancestral && landscapeDestination ls == current) $ do
+      putStrLn "ancestral of target sequence do not match those stored in the work database"
+      putStrLn $ "given ancestral: " ++ BS.unpack ancestral
+      putStrLn $ "DB    ancestral: " ++ (BS.unpack $ landscapeOrigin ls)
+      putStrLn $ "given current:   " ++ BS.unpack current
+      putStrLn $ "DB    current:   " ++ (BS.unpack $ landscapeDestination ls)
+      exitFailure
+    return ls
   else do
     toFile fp l
     return l
