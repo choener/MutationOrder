@@ -38,19 +38,24 @@ import qualified Data.PrimitiveArray as PA
 
 -- | A single RNA with pre-calculated elements.
 --
+-- All calculations are done at 37 C.
+--
 -- TODO include the basepair probability matrix? Can we "compress" that
 -- one?
 
 data RNA = RNA
-  { mutationSet     :: !(VU.Vector (Int,Char))
+  { mutationSet       :: !(VU.Vector (Int,Char))
     -- ^ we store just the mutation set, since this is more sparse and
     -- gives access to the mutational events.
-  , primarySequence :: !ByteString
+  , primarySequence   :: !ByteString
     -- ^ store RNA sequence too, for now
-  , mfeStructure    :: !ByteString
+  , mfeStructure      :: !ByteString
     -- ^ the mfe structure we get
-  , mfeEnergy       :: !Double
+  , mfeEnergy         :: !Double
     -- ^ mfe energy of the structure
+  , centroidStructure :: !ByteString
+    -- ^ the centroid structure
+  , centroidEnergy    :: !Double
   }
   deriving (Show,Eq,Generic)
 
@@ -71,14 +76,16 @@ mkRNA
   -- ^ set of mutations compared to the origin
   -> RNA
 mkRNA inp' ms = RNA
-  { mutationSet     = ms
-  , primarySequence = inp
-  , mfeStructure    = s
-  , mfeEnergy       = e
+  { mutationSet       = ms
+  , primarySequence   = inp
+  , mfeStructure      = s
+  , mfeEnergy         = e
+  , centroidStructure = BS.empty
+  , centroidEnergy    = 0
   }
   where
     inp   = insertMutations ms inp'
-    (e,s) = second BS.pack . unsafePerformIO . mfe $ BS.unpack inp
+    (e,s) = second BS.pack . unsafePerformIO . mfeTemp 37 $ BS.unpack inp
 
 -- | Insert a set of mutations in a @ByteString@.
 
