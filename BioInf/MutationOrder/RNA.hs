@@ -86,6 +86,7 @@ mkRNA inp' ms = RNA
   where
     inp   = insertMutations ms inp'
     (e,s) = second BS.pack . unsafePerformIO . mfeTemp 37 $ BS.unpack inp
+    (cE,cS) = second BS.pack . unsafePerformIO . centroidTemp 37 $ BS.unpack inp
 
 -- | Insert a set of mutations in a @ByteString@.
 

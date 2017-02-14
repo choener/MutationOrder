@@ -54,7 +54,7 @@ library
                , PrimitiveArray         == 0.8.0.*
                , PrimitiveArray-Pretty  == 0.0.0.*
                , ShortestPathProblems   == 0.0.0.*
-               , ViennaRNA-bindings     == 0.225.1.*
+               , ViennaRNA-bindings     == 0.233.1.*
   exposed-modules:
     BioInf.MutationOrder
     BioInf.MutationOrder.RNA
