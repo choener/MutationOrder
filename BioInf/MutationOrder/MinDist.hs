@@ -21,6 +21,7 @@ import           Text.Printf
 import qualified Data.HashMap.Strict as HM
 import           Data.Bits
 import           Debug.Trace
+import qualified Data.ByteString.Char8 as BS
 
 import           ADP.Fusion.Core
 import           ADP.Fusion.Set1
@@ -78,12 +79,23 @@ aPretty Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                           e = mfeEnergy trna - mfeEnergy frna
-                                      in  T.concat [T.pack $ show f,T.pack $ printf " (%5.1f)" e, " -> ", x]
+                                      in  T.concat
+                                            [ x
+                                            , "\n"
+                                            , T.pack $ printf "%5d -> %5d   %5.1f   " t f e
+                                            , T.pack . BS.unpack $ primarySequence trna
+                                            ]
   , mpty = \()  -> ""
   , node = \n   -> let frna = rnas HM.! (BitSet 0)
                        trna = rnas HM.! (BitSet 0 `setBit` n)
                        e    = mfeEnergy trna - mfeEnergy frna
-                   in  T.concat [T.pack $ show n, T.pack $ printf " (%5.1f)" e]
+                   in  T.concat
+                        [ T.pack $ printf "ancestral        %5.1f   " (mfeEnergy frna)
+                        , T.pack $ BS.unpack $ primarySequence frna
+                        , "\n"
+                        , T.pack $ printf "ances -> %5d   %5.1f   " n e
+                        , T.pack . BS.unpack $ primarySequence trna
+                        ]
   , fini = id
   , h    = SM.toList
   }

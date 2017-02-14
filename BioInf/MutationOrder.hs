@@ -51,10 +51,10 @@ runMutationOrder verbose fw fs workdb temperature [ancestralFP,currentFP] = do
   print $ mutationCount ls
   let (e,bs) = runCoOptDist ls
   printf "Best energy gain: %10.4f\n" e
-  printf "Number of co-optimal paths: %10d\n" (length $ take 1000000 bs)
-  forM_ (take 30 bs) T.putStrLn
-  let (_,cs) = runCount ls
-  print cs
+  printf "Number of co-optimal paths: %10d\n" (length $ take 10 bs)
+  forM_ (take 2 bs) T.putStrLn
+--  let (_,cs) = runCount ls
+--  print cs
 
 -- | Stupid fasta reader
 
