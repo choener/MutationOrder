@@ -12,16 +12,18 @@ module BioInf.MutationOrder.MinDist where
 
 import           Control.Arrow (second)
 import           Control.Monad (forM_)
+import           Data.Bits
+import           Data.Data (Data)
 import           Data.List (nub,sort)
 import           Data.Text (Text)
+import           Data.Typeable(Typeable)
+import           Debug.Trace
 import           Numeric.Log
+import qualified Data.ByteString.Char8 as BS
+import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Vector.Fusion.Stream.Monadic as SM
 import           Text.Printf
-import qualified Data.HashMap.Strict as HM
-import           Data.Bits
-import           Debug.Trace
-import qualified Data.ByteString.Char8 as BS
 
 import           ADP.Fusion.Core
 import           ADP.Fusion.Set1
@@ -34,24 +36,33 @@ import           BioInf.MutationOrder.RNA
 
 
 
+data ScaleFunction
+  = ScaleId
+  | ScalePositiveSquared
+  deriving (Show,Data,Typeable)
+
 -- | Minimal distance algebra
 --
 -- TODO The two Ints are the indices of the nodes and could be replaced?
 
-aMinDist :: Monad m => Landscape -> SigMinDist m Double Double (Int:.From:.To) Int
-aMinDist Landscape{..} = SigMinDist
+aMinDist :: Monad m => ScaleFunction -> Landscape -> SigMinDist m Double Double (Int:.From:.To) Int
+aMinDist scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                       in  -- traceShow (BitSet fset, BitSet fset `setBit` f `setBit` t) $
-                                          x + centroidEnergy trna - centroidEnergy frna
+                                          x + scaleFunction scaled (centroidEnergy trna - centroidEnergy frna)
   , mpty = \() -> 0
   , node = \n -> let frna = rnas HM.! (BitSet 0)
                      trna = rnas HM.! (BitSet 0 `setBit` n)
-                 in  centroidEnergy trna - centroidEnergy frna
+                 in  scaleFunction scaled $ centroidEnergy trna - centroidEnergy frna
   , fini = id
   , h    = SM.foldl' min 999999
   }
 {-# Inline aMinDist #-}
+
+scaleFunction ScaleId = id
+scaleFunction ScalePositiveSquared = \x -> if x <= 0 then x else x*x
+{-# Inline scaleFunction #-}
 
 {-
 -- | Maximum edge probability following the probabilities generated from
@@ -144,19 +155,19 @@ type BTU x b = TwITblBt Unboxed EmptyOk (Unit I)      x Id Id b
 -- This produces one-boundary sets. Meaning that for each boundary we get
 -- the total distance within the set.
 
-forwardMinDist1 :: Landscape -> Z:.TS1 Double:.U Double
-forwardMinDist1 landscape =
+forwardMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1 Double:.U Double
+forwardMinDist1 scaleFunction landscape =
   let n = mutationCount landscape
-  in  mutateTablesST $ gMinDist (aMinDist landscape)
+  in  mutateTablesST $ gMinDist (aMinDist scaleFunction landscape)
         (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (999999) []))
         (ITbl 1 0 EmptyOk (fromAssocs Unit         Unit                           (999999) []))
         EdgeWithSet
         Singleton
 {-# NoInline forwardMinDist1 #-}
 
-backtrackMinDist1 :: Landscape -> Z:.TS1 Double:.U Double -> [Text]
-backtrackMinDist1 landscape (Z:.ts1:.u) = unId $ axiom b
-  where !(Z:.bt1:.b) = gMinDist (aMinDist landscape <|| aPretty landscape)
+backtrackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1 Double:.U Double -> [Text]
+backtrackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
+  where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aPretty landscape)
                             (toBacktrack ts1 (undefined :: Id a -> Id a))
                             (toBacktrack u   (undefined :: Id a -> Id a))
                             EdgeWithSet
@@ -164,9 +175,9 @@ backtrackMinDist1 landscape (Z:.ts1:.u) = unId $ axiom b
                         :: Z:.BT1 Double Text:.BTU Double Text
 {-# NoInline backtrackMinDist1 #-}
 
-countBackMinDist1 :: Landscape -> Z:.TS1 Double:.U Double -> [Integer]
-countBackMinDist1 landscape (Z:.ts1:.u) = unId $ axiom b
-  where !(Z:.bt1:.b) = gMinDist (aMinDist landscape <|| aCount landscape)
+countBackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1 Double:.U Double -> [Integer]
+countBackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
+  where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aCount landscape)
                             (toBacktrack ts1 (undefined :: Id a -> Id a))
                             (toBacktrack u   (undefined :: Id a -> Id a))
                             EdgeWithSet
@@ -180,16 +191,16 @@ countBackMinDist1 landscape (Z:.ts1:.u) = unId $ axiom b
 -- TODO do we want this one explicitly or make life easy and just extract
 -- from all @forwardMinDist1@ paths?
 
-runCoOptDist :: Landscape -> (Double,[Text])
-runCoOptDist landscape = (unId $ axiom fwdu,bs)
-  where !(Z:.fwd1:.fwdu) = forwardMinDist1 landscape
-        bs = backtrackMinDist1 landscape (Z:.fwd1:.fwdu)
+runCoOptDist :: ScaleFunction -> Landscape -> (Double,[Text])
+runCoOptDist scaleFunction landscape = (unId $ axiom fwdu,bs)
+  where !(Z:.fwd1:.fwdu) = forwardMinDist1 scaleFunction landscape
+        bs = backtrackMinDist1 scaleFunction landscape (Z:.fwd1:.fwdu)
 {-# NoInline runCoOptDist #-}
 
-runCount :: Landscape -> (Double,[Integer])
-runCount landscape = (unId $ axiom fwdu,bs)
-  where !(Z:.fwd1:.fwdu) = forwardMinDist1 landscape
-        bs = countBackMinDist1 landscape (Z:.fwd1:.fwdu)
+runCount :: ScaleFunction -> Landscape -> (Double,[Integer])
+runCount scaleFunction landscape = (unId $ axiom fwdu,bs)
+  where !(Z:.fwd1:.fwdu) = forwardMinDist1 scaleFunction landscape
+        bs = countBackMinDist1 scaleFunction landscape (Z:.fwd1:.fwdu)
 {-# NoInline runCount #-}
 
 {-

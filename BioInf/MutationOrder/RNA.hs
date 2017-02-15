@@ -106,6 +106,7 @@ data Landscape = Landscape
     -- ^ the ancestral sequence
   , landscapeDestination  :: !ByteString
     -- ^ the final sequence
+  , mutationPositions     :: !(B.BimapHashMap Int Int)
   }
   deriving (Show,Eq,Generic)
 
@@ -124,6 +125,7 @@ createRNAlandscape verbose origin mutation = Landscape
   , mutationCount         = length . filter (>1) . map length $ pms
   , landscapeOrigin       = origin
   , landscapeDestination  = mutation
+  , mutationPositions     = mutbit
   }
   where
     rs  = HM.fromList . map pairWithBitSet $ zipWith talk mus [0..]
@@ -144,7 +146,6 @@ createRNAlandscape verbose origin mutation = Landscape
       in  calcBitSet (bs `setBit` x) xs
     -- bijection between mutation position and bit position
     -- @BitSet Bit   <->   Mutated Bit@
-    mutbit :: B.BimapHashMap Int Int
     mutbit = B.fromList
            . zipWith (flip (,)) [0 :: Int ..]
            . catMaybes $ zipWith3 genB (BS.unpack origin) (BS.unpack mutation) [0 :: Int ..]
