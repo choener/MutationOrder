@@ -30,7 +30,7 @@ module BioInf.MutationOrder
   ) where
 
 import           Numeric.Log
-import           Data.List (groupBy)
+import           Data.List (groupBy,sortBy)
 import           Data.Function (on)
 import           Control.Monad (unless,forM_)
 import           Data.ByteString (ByteString)
@@ -40,6 +40,7 @@ import           System.Exit (exitFailure)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           Text.Printf
+import           Data.Ord (comparing)
 
 import qualified Data.Bijection.HashMap as B
 import           Diagrams.TwoD.ProbabilityGrid
@@ -62,13 +63,16 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   putStrLn ""
   forM_ (take cooptPrint bs) T.putStrLn
   let eps = edgeProbPartFun scaleFunction temperature ls
-  putStr "      "
-  let mpks = B.toList $ mutationPositions ls
+  let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
+  putStr "       "
+  forM_ mpks $ \(mp,k) -> printf " %6d" k
+  putStrLn ""
+  putStr "       "
   forM_ mpks $ \(mp,k) -> printf " %6d" (mp+1)
   putStrLn ""
   forM_ (zip (groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps) mpks) $ \(rps,(mp,k)) -> do
     let (eb,_) = head rps
-    printf " %6d" (mp+1)
+    printf "%3d %3d" k (mp+1)
     forM_ rps $ \(eb,Exp p) -> printf (" %6.4f") (exp p)
     printf "\n"
 {-# NoInline runMutationOrder #-}

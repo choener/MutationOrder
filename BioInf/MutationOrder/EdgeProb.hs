@@ -13,6 +13,7 @@ import           Text.Printf
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as HM
 import           Data.Bits
+import           Debug.Trace
 
 import           ADP.Fusion.Core
 import           ADP.Fusion.EdgeBoundary
@@ -22,6 +23,7 @@ import           Data.PrimitiveArray.ScoreMatrix
 import           Diagrams.TwoD.ProbabilityGrid
 import           FormalLanguage
 import           ShortestPath.SHP.EdgeProb
+import           Data.Vector.Generic.Unstream
 
 import           BioInf.MutationOrder.RNA
 import           BioInf.MutationOrder.MinDist (ScaleFunction(..),scaleFunction)
@@ -37,16 +39,25 @@ aInside :: Monad m => ScaleFunction -> Landscape -> Double -> SigEdgeProb m (Log
 aInside scaled Landscape{..} temperature = SigEdgeProb
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
-                                      in  x * (Exp . negate $ scaleFunction scaled (centroidEnergy trna - centroidEnergy frna) / temperature)
+                                          fene = centroidEnergy frna
+                                          tene = centroidEnergy trna
+                                      in  traceShow ('E',BitSet fset,f,t,x,fene,tene) $ x * (Exp . negate $ scaleFunction scaled (tene - fene) / s)
   , mpty = \() -> 1
   , node = \n -> let frna = rnas HM.! (BitSet 0)
                      trna = rnas HM.! (BitSet 0 `setBit` n)
-                 in  Exp . negate $ scaleFunction scaled (centroidEnergy trna - centroidEnergy frna) / temperature
+                     fene = centroidEnergy frna
+                     tene = centroidEnergy trna
+                 in  traceShow ('N',n,fene,tene) $ Exp . negate $ scaleFunction scaled (tene - fene) / s
   , fini = \l (fset:.From f:.To t) r -> let frna = rnas HM.! (BitSet fset)
                                             trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
-                                        in  l * r * (Exp . negate $ scaleFunction scaled (centroidEnergy trna - centroidEnergy frna) / temperature)
+                                            fene = centroidEnergy frna
+                                            tene = centroidEnergy trna
+                                        in  traceShow ('F',BitSet fset,f,t,l,r,fene,tene) $ l * r * (Exp . negate $ scaleFunction scaled (tene - fene) / s)
   , h    = SM.foldl' (+) 0
-  }
+--  , h    = \s -> do v :: V.Vector (Log Double) <- streamToVectorM s
+--                    return $ Numeric.Log.sum v
+  } where !s = temperature * n * (n-1)
+          !n = fromIntegral mutationCount
 {-# Inline aInside #-}
 
 
