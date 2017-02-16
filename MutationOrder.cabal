@@ -58,15 +58,16 @@ library
                , ViennaRNA-bindings     == 0.233.1.*
   exposed-modules:
     BioInf.MutationOrder
-    BioInf.MutationOrder.RNA
+    BioInf.MutationOrder.EdgeProb
     BioInf.MutationOrder.MinDist
---    BioInf.MutationOrder.EdgeProb
+    BioInf.MutationOrder.RNA
 --    BioInf.MutationOrder.ScoreMat
   default-extensions: BangPatterns
                     , DeriveDataTypeable
                     , DeriveGeneric
                     , FlexibleContexts
                     , GADTs
+                    , LambdaCase
                     , MultiParamTypeClasses
                     , OverloadedStrings
                     , QuasiQuotes

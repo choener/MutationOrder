@@ -1,6 +1,8 @@
 
 module BioInf.MutationOrder.EdgeProb where
 
+import Data.PrimitiveArray.ScoreMatrix
+
 {-
 
 import           Control.Arrow (second)

@@ -10,7 +10,7 @@
 
 module BioInf.MutationOrder.RNA where
 
-import           Data.Aeson
+import           Data.Aeson as DA
 import           Data.Bits
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Arrow (second)
@@ -75,7 +75,7 @@ instance ToJSON RNA where
            , "centroidEnergy"     .= centroidEnergy
            ]
   toEncoding RNA{..} =
-    pairs (  "mutationSet" .= mutationSet
+    pairs (  "mutationSet"        .= mutationSet
           <> "primarySequence"    .= decodeUtf8 primarySequence
           <> "mfeStructure"       .= decodeUtf8 mfeStructure
           <> "mfeEnergy"          .= mfeEnergy
@@ -146,6 +146,31 @@ data Landscape = Landscape
 instance NFData     Landscape
 instance Serialize  Landscape
 
+instance ToJSON Landscape where
+  toJSON Landscape{..} =
+    object [ "rnas"                 .= rnas
+           , "mutationCount"        .= mutationCount
+           , "landscapeOrigin"      .= decodeUtf8 landscapeOrigin
+           , "landscapeDestination" .= decodeUtf8 landscapeDestination
+           , "mutationPositions"    .= mutationPositions
+           ]
+  toEncoding Landscape{..} =
+    pairs (  "rnas"                 .= rnas
+          <> "mutationCount"        .= mutationCount
+          <> "landscapeOrigin"      .= decodeUtf8 landscapeOrigin
+          <> "landscapeDestination" .= decodeUtf8 landscapeDestination
+          <> "mutationPositions"    .= mutationPositions
+          )
+
+instance FromJSON Landscape where
+  parseJSON (Object v) = do
+    rnas                  <- v .: "rnas"
+    mutationCount         <- v .: "mutationCount"
+    landscapeOrigin       <- encodeUtf8 <$> v .: "landscapeOrigin"
+    landscapeDestination  <- encodeUtf8 <$> v .: "landscapeDestination"
+    mutationPositions     <- v .: "mutationPositions"
+    return Landscape{..}
+
 -- |
 --
 -- TODO prime candidate for parallelization. ViennaRNA-bindings currently
@@ -190,10 +215,16 @@ createRNAlandscape verbose origin mutation = Landscape
 toFile :: FilePath -> Landscape -> IO ()
 toFile fp = BSL.writeFile fp . compress . encodeLazy
 
+toFileJSON :: FilePath -> Landscape -> IO ()
+toFileJSON fp = BSL.writeFile fp . compress . DA.encode
+
 fromFile :: FilePath -> IO Landscape
-fromFile fp = do
-  i <- BSL.readFile fp
-  case (decodeLazy . decompress $ i) of
-    Left err -> error $ "BioInf.MutationOrder.RNA.fromFile: " ++ err
-    Right ls -> return ls
+fromFile fp = (decodeLazy . decompress) <$> BSL.readFile fp >>= \case
+  Left err -> error $ "BioInf.MutationOrder.RNA.fromFile: " ++ err
+  Right ls -> return ls
+
+fromFileJSON :: FilePath -> IO Landscape
+fromFileJSON fp = (DA.eitherDecode' . decompress) <$> BSL.readFile fp >>= \case
+  Left err -> error $ "BioInf.MutationOrder.RNA.fromFile: " ++ err
+  Right ls -> return ls
 

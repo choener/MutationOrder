@@ -85,7 +85,8 @@ withDumpFile
 withDumpFile fp ancestral current l = do
   dfe <- doesFileExist fp
   if dfe then do
-    ls <- fromFile fp
+    printf "using database %s to load sequence information\n" fp
+    ls <- fromFileJSON fp
     -- now we check if we have a sane DB file
     unless (landscapeOrigin ls == ancestral && landscapeDestination ls == current) $ do
       putStrLn "ancestral or target sequence do not match those stored in the work database"
@@ -96,7 +97,8 @@ withDumpFile fp ancestral current l = do
       exitFailure
     return ls
   else do
-    toFile fp l
+    printf "database %s does not exist! Folding all intermediate structures. This may take a while!\n" fp
+    toFileJSON fp l
     return l
 
 {-
