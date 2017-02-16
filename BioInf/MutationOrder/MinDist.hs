@@ -24,11 +24,14 @@ import qualified Data.HashMap.Strict as HM
 import qualified Data.Text as T
 import qualified Data.Vector.Fusion.Stream.Monadic as SM
 import           Text.Printf
+import qualified Data.Vector.Unboxed as VU
+import           Data.Maybe (fromJust)
 
+import qualified Data.Bijection.HashMap as B
 import           ADP.Fusion.Core
 import           ADP.Fusion.Set1
 import           ADP.Fusion.Unit
-import           Data.PrimitiveArray hiding (toList)
+import           Data.PrimitiveArray hiding (toList,map)
 import           FormalLanguage
 import           ShortestPath.SHP.MinDist
 
@@ -89,27 +92,34 @@ aPretty :: Monad m => Landscape -> SigMinDist m Text [Text] (Int:.From:.To) Int
 aPretty Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
-                                          e = centroidEnergy trna - centroidEnergy frna
-                                      in  T.concat
-                                            [ x
-                                            , "\n"
-                                            , T.pack $ printf "%5d -> %5d   %5.1f   " t f e
-                                            , T.pack . BS.unpack $ primarySequence trna
-                                            ]
+                                          eM = mfeEnergy trna - mfeEnergy frna
+                                          eC = centroidEnergy trna - centroidEnergy frna
+                                          f' = fromJust $ B.lookupR mutationPositions f
+                                          t' = fromJust $ B.lookupR mutationPositions t
+                                      in  T.concat [x, showMut frna trna f' eM eC]
   , mpty = \()  -> ""
   , node = \n   -> let frna = rnas HM.! (BitSet 0)
                        trna = rnas HM.! (BitSet 0 `setBit` n)
-                       e    = centroidEnergy trna - centroidEnergy frna
-                   in  T.concat
-                        [ T.pack $ printf "ancestral        %5.1f   " (centroidEnergy frna)
-                        , T.pack $ BS.unpack $ primarySequence frna
-                        , "\n"
-                        , T.pack $ printf "ances -> %5d   %5.1f   " n e
-                        , T.pack . BS.unpack $ primarySequence trna
-                        ]
+                       n'   = fromJust $ B.lookupR mutationPositions n
+                       eM   = mfeEnergy trna - mfeEnergy frna
+                       eC   = centroidEnergy trna - centroidEnergy frna
+                   in  T.concat [showHdr frna n', showMut frna trna n' eM eC]
   , fini = id
   , h    = SM.toList
-  }
+  } where
+      showHdr frna n = T.concat
+        [ T.pack $ printf "mutation         mfe     centr   "
+        , T.pack $ VU.toList $ VU.replicate (BS.length $ primarySequence frna) ' ' VU.// (map (,'v') . sort . map fst $ B.toList mutationPositions)
+        , "\n"
+        , T.pack $ printf "ancestral        %5.1f   %5.1f   " (mfeEnergy frna) (centroidEnergy frna)
+        , T.pack $ BS.unpack $ primarySequence frna
+        , "\n"
+        ]
+      showMut frna trna n eM eC = T.concat
+        [ T.pack $ printf "%5d            %5.1f   %5.1f   " n eM eC
+        , T.pack . BS.unpack $ primarySequence trna
+        , "\n"
+        ]
 {-# Inline aPretty #-}
 
 -- | Count co-optimals

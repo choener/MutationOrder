@@ -32,6 +32,7 @@ Extra-Source-Files:
 
 library
   build-depends: base                   >= 4.7    &&  < 5.0
+               , aeson                  >= 1.1
                , bytestring
                , cereal                 >= 0.5
                , cereal-vector          >= 0.2
@@ -71,6 +72,7 @@ library
                     , QuasiQuotes
                     , RecordWildCards
                     , TemplateHaskell
+                    , TupleSections
                     , TypeFamilies
                     , TypeOperators
   default-language:

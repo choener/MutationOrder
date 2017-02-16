@@ -1,6 +1,7 @@
 packages: .
           ../Lib-ADPfusion
           ../Lib-ADPfusionSet
+          ../Lib-bimaps
           ../Lib-BiobaseXNA
           ../Lib-DPutils
           ../Lib-FormalGrammars

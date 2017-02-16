@@ -53,11 +53,8 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   let (e,bs) = runCoOptDist scaleFunction ls
   printf "Best energy gain: %10.4f\n" e
   printf "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
-  forM_ (take cooptPrint bs) $ \b -> do
-    T.putStrLn b
-    putStrLn ""
---  let (_,cs) = runCount ls
---  print cs
+  putStrLn ""
+  forM_ (take cooptPrint bs) T.putStrLn
 
 -- | Stupid fasta reader
 

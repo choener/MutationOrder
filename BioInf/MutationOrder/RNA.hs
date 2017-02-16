@@ -10,6 +10,7 @@
 
 module BioInf.MutationOrder.RNA where
 
+import           Data.Aeson
 import           Data.Bits
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Arrow (second)
@@ -29,6 +30,8 @@ import qualified Data.Vector.Unboxed as VU
 import           System.IO.Unsafe (unsafePerformIO)
 import qualified Data.HashMap.Strict as HM
 import           Data.Serialize.Instances
+import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Monoid
 
 import qualified Data.Bijection.HashMap as B
 import           BioInf.ViennaRNA.Bindings
@@ -61,6 +64,36 @@ data RNA = RNA
 
 instance NFData     RNA
 instance Serialize  RNA
+
+instance ToJSON RNA where
+  toJSON RNA{..} =
+    object [ "mutationSet"        .= mutationSet
+           , "primarySequence"    .= decodeUtf8 primarySequence
+           , "mfeStructure"       .= decodeUtf8 mfeStructure
+           , "mfeEnergy"          .= mfeEnergy
+           , "centroidStructure"  .= decodeUtf8 centroidStructure
+           , "centroidEnergy"     .= centroidEnergy
+           ]
+  toEncoding RNA{..} =
+    pairs (  "mutationSet" .= mutationSet
+          <> "primarySequence"    .= decodeUtf8 primarySequence
+          <> "mfeStructure"       .= decodeUtf8 mfeStructure
+          <> "mfeEnergy"          .= mfeEnergy
+          <> "centroidStructure"  .= decodeUtf8 centroidStructure
+          <> "centroidEnergy"     .= centroidEnergy
+          )
+
+instance FromJSON RNA where
+  parseJSON (Object v) = do
+    mutationSet <- v .: "mutationSet"
+    primarySequence <- encodeUtf8 <$> v .: "primarySequence"
+    let (e,s) = second BS.pack . unsafePerformIO . mfeTemp 37 $ BS.unpack primarySequence
+    mfeStructure <- (fmap encodeUtf8 <$> v .:? "mfeStructure") .!= s
+    mfeEnergy <- v .:? "mfeEnergy" .!= e
+    let (ce,cs) = second BS.pack . unsafePerformIO . centroidTemp 37 $ BS.unpack primarySequence
+    centroidStructure <- (fmap encodeUtf8 <$> v .:? "centroidStructure") .!= cs
+    centroidEnergy <- v .:? "centroidEnergy" .!= ce
+    return RNA{..}
 
 -- | Given the primary sequence and the mutation set, fill the 'RNA'
 -- structure.
