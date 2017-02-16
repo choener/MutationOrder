@@ -110,13 +110,15 @@ aPretty Landscape{..} = SigMinDist
       showHdr frna n = T.concat
         [ T.pack $ printf "mutation         mfe     centr   "
         , T.pack $ VU.toList $ VU.replicate (BS.length $ primarySequence frna) ' ' VU.// (map (,'v') . sort . map fst $ B.toList mutationPositions)
+        , T.pack $ "\n" ++ replicate 33 ' '
+        , T.pack . take (BS.length $ primarySequence frna) . concat $ zipWith (\xs x -> xs ++ show x) (repeat $ "    .    ") (drop 1 $ cycle [0..9])
         , "\n"
         , T.pack $ printf "ancestral        %5.1f   %5.1f   " (mfeEnergy frna) (centroidEnergy frna)
         , T.pack $ BS.unpack $ primarySequence frna
         , "\n"
         ]
       showMut frna trna n eM eC = T.concat
-        [ T.pack $ printf "%5d            %5.1f   %5.1f   " n eM eC
+        [ T.pack $ printf "%5d            %5.1f   %5.1f   " (n+1) eM eC
         , T.pack . BS.unpack $ primarySequence trna
         , "\n"
         ]
