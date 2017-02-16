@@ -1,10 +1,6 @@
 
 module BioInf.MutationOrder.EdgeProb where
 
-import Data.PrimitiveArray.ScoreMatrix
-
-{-
-
 import           Control.Arrow (second)
 import           Control.Monad (forM_)
 import           Data.List (nub,sort)
@@ -14,16 +10,21 @@ import           Numeric.Log
 import qualified Data.Text as T
 import qualified Data.Vector.Fusion.Stream.Monadic as SM
 import           Text.Printf
+import qualified Data.Vector as V
+import qualified Data.HashMap.Strict as HM
+import           Data.Bits
 
 import           ADP.Fusion.Core
 import           ADP.Fusion.EdgeBoundary
 import           ADP.Fusion.Set1
 import           Data.PrimitiveArray hiding (toList)
+import           Data.PrimitiveArray.ScoreMatrix
 import           Diagrams.TwoD.ProbabilityGrid
 import           FormalLanguage
 import           ShortestPath.SHP.EdgeProb
 
 import           BioInf.MutationOrder.RNA
+import           BioInf.MutationOrder.MinDist (ScaleFunction(..),scaleFunction)
 
 
 
@@ -32,12 +33,18 @@ import           BioInf.MutationOrder.RNA
 -- TODO the @Edge@ needs to be an @EdgeWithActive@ to get the active bits
 -- on the left in the set.
 
-aInside :: Monad m => Landscape -> Temperatur -> SigEdgeProb m (Log Double) (Log Double) (BitSet:.From:.To) Int
-aInside Landscape{..} temperature = SigEdgeProb
-  { edge = \x e -> x * error "landscape @ e scaled by temperature"
+aInside :: Monad m => ScaleFunction -> Landscape -> Double -> SigEdgeProb m (Log Double) (Log Double) (Int:.From:.To) Int
+aInside scaled Landscape{..} temperature = SigEdgeProb
+  { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
+                                          trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
+                                      in  x * (Exp . negate $ scaleFunction scaled (centroidEnergy trna - centroidEnergy frna) / temperature)
   , mpty = \() -> 1
-  , node = \n -> 1
-  , fini = \l e f -> l * error "landscape at e scaled by temperature" * f
+  , node = \n -> let frna = rnas HM.! (BitSet 0)
+                     trna = rnas HM.! (BitSet 0 `setBit` n)
+                 in  Exp . negate $ scaleFunction scaled (centroidEnergy trna - centroidEnergy frna) / temperature
+  , fini = \l (fset:.From f:.To t) r -> let frna = rnas HM.! (BitSet fset)
+                                            trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
+                                        in  l * r * (Exp . negate $ scaleFunction scaled (centroidEnergy trna - centroidEnergy frna) / temperature)
   , h    = SM.foldl' (+) 0
   }
 {-# Inline aInside #-}
@@ -56,14 +63,14 @@ type BEB x b = TwITblBt Unboxed EmptyOk (EdgeBoundary I) x Id Id b
 
 -- | Extract the individual partition scores.
 
-edgeProbPartFun :: Landscape -> Double -> [(EdgeBoundary I, Log Double)]
-edgeProbPartFun landscape temperature =
+edgeProbPartFun :: ScaleFunction -> Double -> Landscape -> [(EdgeBoundary I, Log Double)]
+edgeProbPartFun scaled temperature landscape =
   let n       = mutationCount landscape
-      (Z:.sF:.sL:.sZ) = mutateTablesST $ gEdgeProb (aInside landscape temperature)
+      (Z:.sF:.sL:.sZ) = mutateTablesST $ gEdgeProb (aInside scaled landscape temperature)
                           (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 0 []))
                           (ITbl 1 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 0 []))
                           (ITbl 2 0 EmptyOk (fromAssocs (0 :-> 0)    (0 :-> (n-1))                  0 []))
-                          EdgeWithBitSet
+                          EdgeWithSet
                           Singleton
                         :: Z:.TF1 (Log Double):.TL1 (Log Double):.EB (Log Double)
       TW (ITbl _ _ _ pf) _ = sZ
@@ -75,11 +82,10 @@ edgeProbPartFun landscape temperature =
 
 -- | Turn the edge probabilities into a score matrix.
 
-edgeProbScoreMat :: (Unbox t) => ScoreMat t -> [(EdgeBoundary I, Log Double)] -> ScoreMat (Log Double)
-edgeProbScoreMat (ScoreMat mat ns) xs' = ScoreMat m ns
+edgeProbScoreMat :: [(EdgeBoundary I, Log Double)] -> ScoreMatrix (Log Double)
+edgeProbScoreMat xs' = ScoreMatrix m V.empty V.empty
   where m = fromAssocs l h 0 xs
-        (l,h) = bounds mat
+        l = (Z:.0:.0)
+        h = (Z:.maximum [f | (f :-> _,_) <- xs']:.maximum [t | (_ :-> t,_) <- xs'])
         xs = [ ((Z:.f:.t),p) | (f :-> t, p) <- xs' ]
-
--}
 

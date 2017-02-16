@@ -29,6 +29,9 @@ module BioInf.MutationOrder
   , ScaleFunction (..)
   ) where
 
+import           Numeric.Log
+import           Data.List (groupBy)
+import           Data.Function (on)
 import           Control.Monad (unless,forM_)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString.Char8 as BS
@@ -38,10 +41,13 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           Text.Printf
 
+import qualified Data.Bijection.HashMap as B
 import           Diagrams.TwoD.ProbabilityGrid
+import           Data.PrimitiveArray (fromEdgeBoundaryFst)
 
 import           BioInf.MutationOrder.RNA
 import           BioInf.MutationOrder.MinDist
+import           BioInf.MutationOrder.EdgeProb
 
 
 
@@ -55,6 +61,17 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   printf "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
   putStrLn ""
   forM_ (take cooptPrint bs) T.putStrLn
+  let eps = edgeProbPartFun scaleFunction temperature ls
+  putStr "      "
+  let mpks = B.toList $ mutationPositions ls
+  forM_ mpks $ \(mp,k) -> printf " %6d" (mp+1)
+  putStrLn ""
+  forM_ (zip (groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps) mpks) $ \(rps,(mp,k)) -> do
+    let (eb,_) = head rps
+    printf " %6d" (mp+1)
+    forM_ rps $ \(eb,Exp p) -> printf (" %6.4f") (exp p)
+    printf "\n"
+{-# NoInline runMutationOrder #-}
 
 -- | Stupid fasta reader
 
