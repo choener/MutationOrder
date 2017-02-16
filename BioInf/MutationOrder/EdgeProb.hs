@@ -41,18 +41,22 @@ aInside scaled Landscape{..} temperature = SigEdgeProb
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                           fene = centroidEnergy frna
                                           tene = centroidEnergy trna
-                                      in  traceShow ('E',BitSet fset,f,t,x,fene,tene) $ x * (Exp . negate $ scaleFunction scaled (tene - fene) / s)
+                                          res' = scaleFunction scaled (tene - fene) / s
+                                          res  = Exp . negate $ res'
+                                      in  traceShow ('E',BitSet fset,f,t,x,fene,tene,res',res) $ x * res
   , mpty = \() -> 1
   , node = \n -> let frna = rnas HM.! (BitSet 0)
                      trna = rnas HM.! (BitSet 0 `setBit` n)
                      fene = centroidEnergy frna
                      tene = centroidEnergy trna
-                 in  traceShow ('N',n,fene,tene) $ Exp . negate $ scaleFunction scaled (tene - fene) / s
+                     res  = Exp . negate $ scaleFunction scaled (tene - fene) / s
+                 in  traceShow ('N',n,fene,tene,res) res
   , fini = \l (fset:.From f:.To t) r -> let frna = rnas HM.! (BitSet fset)
                                             trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                             fene = centroidEnergy frna
                                             tene = centroidEnergy trna
-                                        in  traceShow ('F',BitSet fset,f,t,l,r,fene,tene) $ l * r * (Exp . negate $ scaleFunction scaled (tene - fene) / s)
+                                            res  = (Exp . negate $ scaleFunction scaled (tene - fene) / s)
+                                        in  traceShow ('F',BitSet fset,f,t,l,r,fene,tene,res) $ l * r * res
   , h    = SM.foldl' (+) 0
 --  , h    = \s -> do v :: V.Vector (Log Double) <- streamToVectorM s
 --                    return $ Numeric.Log.sum v
