@@ -22,7 +22,7 @@ import           Data.PrimitiveArray hiding (toList)
 import           Data.PrimitiveArray.ScoreMatrix
 import           Diagrams.TwoD.ProbabilityGrid
 import           FormalLanguage
-import           ShortestPath.SHP.EdgeProb
+import           ShortestPath.SHP.EdgeProbIO
 import           Data.Vector.Generic.Unstream
 
 import           BioInf.MutationOrder.RNA
@@ -37,26 +37,29 @@ import           BioInf.MutationOrder.MinDist (ScaleFunction(..),scaleFunction)
 
 aInside :: Monad m => ScaleFunction -> Landscape -> Double -> SigEdgeProb m (Log Double) (Log Double) (Int:.From:.To) Int
 aInside scaled Landscape{..} temperature = SigEdgeProb
-  { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
-                                          trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
-                                          fene = centroidEnergy frna
-                                          tene = centroidEnergy trna
-                                          res' = scaleFunction scaled (tene - fene) / s
-                                          res  = Exp . negate $ res'
-                                      in  traceShow ('E',BitSet fset,f,t,x,fene,tene,res',res) $ x * res
+  { edge = \x (fset:.From f:.To t) ->
+      let frna = rnas HM.! (BitSet fset)
+          trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
+          fene = {-centroid-} mfeEnergy frna
+          tene = {-centroid-} mfeEnergy trna
+          res' = scaleFunction scaled (tene - fene) / s
+          res  = Exp . negate $ res'
+      in  traceShow ('E',BitSet fset,f,t,x,fene,tene,res',x,res) $ x * res
   , mpty = \() -> 1
-  , node = \n -> let frna = rnas HM.! (BitSet 0)
-                     trna = rnas HM.! (BitSet 0 `setBit` n)
-                     fene = centroidEnergy frna
-                     tene = centroidEnergy trna
-                     res  = Exp . negate $ scaleFunction scaled (tene - fene) / s
-                 in  traceShow ('N',n,fene,tene,res) res
-  , fini = \l (fset:.From f:.To t) r -> let frna = rnas HM.! (BitSet fset)
-                                            trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
-                                            fene = centroidEnergy frna
-                                            tene = centroidEnergy trna
-                                            res  = (Exp . negate $ scaleFunction scaled (tene - fene) / s)
-                                        in  traceShow ('F',BitSet fset,f,t,l,r,fene,tene,res) $ l * r * res
+  , node = \x n ->
+      let frna = rnas HM.! (BitSet 0)
+          trna = rnas HM.! (BitSet 0 `setBit` n)
+          fene = {-centroid-} mfeEnergy frna
+          tene = {-centroid-} mfeEnergy trna
+          res  = Exp . negate $ scaleFunction scaled (tene - fene) / s
+      in  traceShow ('N',n,' ',fene,tene,' ',res,x) $ x * res
+  , fini = \l (fset:.From f:.To t) r ->
+      let frna = rnas HM.! (BitSet fset)
+          trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
+          fene = {-centroid-} mfeEnergy frna
+          tene = {-centroid-} mfeEnergy trna
+          res  = (Exp . negate $ scaleFunction scaled (tene - fene) / s)
+      in  traceShow ('F',BitSet fset,f,t,l,r,fene,tene,l,r,res) $ l * r * res
   , h    = SM.foldl' (+) 0
 --  , h    = \s -> do v :: V.Vector (Log Double) <- streamToVectorM s
 --                    return $ Numeric.Log.sum v
@@ -67,18 +70,20 @@ aInside scaled Landscape{..} temperature = SigEdgeProb
 
 
 type TF1 x = TwITbl Id Unboxed EmptyOk (BS1 First I)      x
-type TL1 x = TwITbl Id Unboxed EmptyOk (BS1 Last  I)      x
-type EB  x = TwITbl Id Unboxed EmptyOk (EdgeBoundary I)   x
+type TL1 x = TwITbl Id Unboxed EmptyOk (BS1 First O)      x
+type EB  x = TwITbl Id Unboxed EmptyOk (EdgeBoundary C)   x
 
+{-
 type BF1 x b = TwITblBt Unboxed EmptyOk (BS1 First I)    x Id Id b
-type BL1 x b = TwITblBt Unboxed EmptyOk (BS1 Last  I)    x Id Id b
+type BL1 x b = TwITblBt Unboxed EmptyOk (BS1 First O)    x Id Id b
 type BEB x b = TwITblBt Unboxed EmptyOk (EdgeBoundary I) x Id Id b
+-}
 
 
 
 -- | Extract the individual partition scores.
 
-edgeProbPartFun :: ScaleFunction -> Double -> Landscape -> [(EdgeBoundary I, Log Double)]
+edgeProbPartFun :: ScaleFunction -> Double -> Landscape -> [(EdgeBoundary C, Log Double)]
 edgeProbPartFun scaled temperature landscape =
   let n       = mutationCount landscape
       (Z:.sF:.sL:.sZ) = mutateTablesST $ gEdgeProb (aInside scaled landscape temperature)
@@ -92,7 +97,7 @@ edgeProbPartFun scaled temperature landscape =
       bs' = assocs pf
       pssum = (Numeric.Log.sum $ Prelude.map snd bs') / (fromIntegral n - 1)
       bs = Prelude.map (second (/pssum)) bs'
-  in bs
+  in traceShow (bs',pssum,bs) bs
 {-# NoInline edgeProbPartFun #-}
 
 -- | Turn the edge probabilities into a score matrix.
