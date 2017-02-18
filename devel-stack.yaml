@@ -1,4 +1,4 @@
-resolver: lts-6.5
+resolver: lts-8.0
 
 packages:
 - '.'
@@ -13,8 +13,8 @@ packages:
 - location: ../Lib-FormalGrammars
   extra-dep: true
 
-extra-deps:
-- tuple-0.3.0.2
+#extra-deps:
+#- tuple-0.3.0.2
 
-flags: {}
+flags:
 

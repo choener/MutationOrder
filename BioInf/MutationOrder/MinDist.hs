@@ -48,16 +48,17 @@ data ScaleFunction
 --
 -- TODO The two Ints are the indices of the nodes and could be replaced?
 
-aMinDist :: Monad m => ScaleFunction -> Landscape -> SigMinDist m Double Double (Int:.From:.To) Int
+aMinDist :: Monad m => ScaleFunction -> Landscape -> SigMinDist m Double Double (Int:.From:.To) (Int:.To)
 aMinDist scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                       in  -- traceShow (BitSet fset, BitSet fset `setBit` f `setBit` t) $
                                           x + scaleFunction scaled (centroidEnergy trna - centroidEnergy frna)
   , mpty = \() -> 0
-  , node = \n -> let frna = rnas HM.! (BitSet 0)
-                     trna = rnas HM.! (BitSet 0 `setBit` n)
-                 in  scaleFunction scaled $ centroidEnergy trna - centroidEnergy frna
+  , node = \(nset:.To n) ->
+      let frna = rnas HM.! (BitSet 0)
+          trna = rnas HM.! (BitSet 0 `setBit` n)
+      in  scaleFunction scaled $ centroidEnergy trna - centroidEnergy frna
   , fini = id
   , h    = SM.foldl' min 999999
   }
@@ -88,7 +89,7 @@ aMaxEdgeProb s = SigMinDist
 --
 -- TODO Use text builder
 
-aPretty :: Monad m => Landscape -> SigMinDist m Text [Text] (Int:.From:.To) Int
+aPretty :: Monad m => Landscape -> SigMinDist m Text [Text] (Int:.From:.To) (Int:.To)
 aPretty Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
@@ -98,12 +99,14 @@ aPretty Landscape{..} = SigMinDist
                                           t' = fromJust $ B.lookupR mutationPositions t
                                       in  T.concat [x, showMut frna trna f' eM eC]
   , mpty = \()  -> ""
-  , node = \n   -> let frna = rnas HM.! (BitSet 0)
-                       trna = rnas HM.! (BitSet 0 `setBit` n)
-                       n'   = fromJust $ B.lookupR mutationPositions n
-                       eM   = mfeEnergy trna - mfeEnergy frna
-                       eC   = centroidEnergy trna - centroidEnergy frna
-                   in  T.concat [showHdr frna n', showMut frna trna n' eM eC]
+  , node = \(nset:.To n)  ->
+      let
+        frna = rnas HM.! (BitSet 0)
+        trna = rnas HM.! (BitSet 0 `setBit` n)
+        n'   = fromJust $ B.lookupR mutationPositions n
+        eM   = mfeEnergy trna - mfeEnergy frna
+        eC   = centroidEnergy trna - centroidEnergy frna
+      in  T.concat [showHdr frna n', showMut frna trna n' eM eC]
   , fini = id
   , h    = SM.toList
   } where
@@ -126,7 +129,7 @@ aPretty Landscape{..} = SigMinDist
 
 -- | Count co-optimals
 
-aCount :: Monad m => Landscape -> SigMinDist m Integer [Integer] (Int:.From:.To) Int
+aCount :: Monad m => Landscape -> SigMinDist m Integer [Integer] (Int:.From:.To) (Int:.To)
 aCount Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> x
   , mpty = \()  -> 1

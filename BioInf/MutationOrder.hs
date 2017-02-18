@@ -75,6 +75,7 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
     let (eb,_) = head rps
     printf "%3d %3d" k (mp+1)
     forM_ rps $ \(eb,Exp p) -> printf (" %6.4f") (exp p)
+    printf "   %6.4f" (Prelude.sum $ map (exp . ln . snd) rps)
     printf "\n"
   let colSums = M.fromListWith (+) [ (c,p) | ((_ :-> c),p) <- eps ]
   putStr "    Σ  "
