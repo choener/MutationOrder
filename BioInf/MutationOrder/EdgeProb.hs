@@ -121,7 +121,7 @@ edgeProbPartFun scaled temperature landscape =
       ibssum = Numeric.Log.sum $ Prelude.map snd ibs'
       obssum = Numeric.Log.sum $ Prelude.map snd ibs'
       ibs    = Prelude.map (second (/ibssum)) ibs'
-      bs     = Prelude.map (second (/pssum)) bs'
+      bs     = Prelude.map (second (/ibssum)) bs'
   in
 #ifdef ADPFUSION_DEBUGOUTPUT
       traceShow (assocs lkF) $
