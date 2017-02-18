@@ -30,12 +30,25 @@ Extra-Source-Files:
 
 
 
+flag debug
+  description:  Enable bounds checking and various other debug operations at the cost of a significant performance penalty.
+  default:      False
+  manual:       True
+
+flag debugoutput
+  description:  Enable debug output, which spams the screen full of index information
+  default:      False
+  manual:       True
+
+
+
 library
   build-depends: base                   >= 4.7    &&  < 5.0
                , aeson                  >= 1.1
                , bytestring
                , cereal                 >= 0.5
                , cereal-vector          >= 0.2
+               , containers
                , deepseq                >= 1.4
                , directory
                , filepath
@@ -64,6 +77,7 @@ library
     BioInf.MutationOrder.RNA
 --    BioInf.MutationOrder.ScoreMat
   default-extensions: BangPatterns
+                    , CPP
                     , DeriveDataTypeable
                     , DeriveGeneric
                     , FlexibleContexts
@@ -82,6 +96,11 @@ library
     Haskell2010
   ghc-options:
     -O2 -funbox-strict-fields
+  if flag(debug)
+    cpp-options: -DADPFUSION_CHECKS
+    ghc-options: -fno-ignore-asserts
+  if flag(debugoutput)
+    cpp-options: -DADPFUSION_DEBUGOUTPUT
 
 
 

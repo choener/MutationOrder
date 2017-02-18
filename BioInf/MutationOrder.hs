@@ -41,10 +41,11 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           Text.Printf
 import           Data.Ord (comparing)
+import qualified Data.Map.Strict as M
 
 import qualified Data.Bijection.HashMap as B
 import           Diagrams.TwoD.ProbabilityGrid
-import           Data.PrimitiveArray (fromEdgeBoundaryFst)
+import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..))
 
 import           BioInf.MutationOrder.RNA
 import           BioInf.MutationOrder.MinDist
@@ -62,7 +63,7 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   printf "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
   putStrLn ""
   forM_ (take cooptPrint bs) T.putStrLn
-  let eps = edgeProbPartFun scaleFunction temperature ls
+  let (ibs,eps) = edgeProbPartFun scaleFunction temperature ls
   let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
   putStr "       "
   forM_ mpks $ \(mp,k) -> printf " %6d" k
@@ -75,6 +76,10 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
     printf "%3d %3d" k (mp+1)
     forM_ rps $ \(eb,Exp p) -> printf (" %6.4f") (exp p)
     printf "\n"
+  let colSums = M.fromListWith (+) [ (c,p) | ((_ :-> c),p) <- eps ]
+  putStr "    Σ  "
+  forM_ (M.toList colSums) $ \(c,Exp p) -> printf (" %6.4f") (exp p)
+  putStrLn "\n"
 {-# NoInline runMutationOrder #-}
 
 -- | Stupid fasta reader
