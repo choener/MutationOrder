@@ -137,14 +137,17 @@ edgeProbPartFun scaled temperature landscape =
 -- | Turn the edge probabilities into a score matrix.
 
 edgeProbScoreMatrix :: Landscape -> [(EdgeBoundary C, Log Double)] -> ScoreMatrix (Log Double)
-edgeProbScoreMatrix Landscape{..} xs' = ScoreMatrix m names names
+edgeProbScoreMatrix Landscape{..} xs' = ScoreMatrix m nprobs names names
   where m = fromAssocs l h 0 xs
         l = (Z:.0:.0)
         h = (Z:.maximum [f | (f :-> _,_) <- xs']:.maximum [t | (_ :-> t,_) <- xs'])
+        (Z:._:.hh) = h
         xs = [ ((Z:.f:.t),p) | (f :-> t, p) <- xs' ]
         (_,Z:._:.n) = bounds m
         names = V.fromList [ T.pack . show . (+1)
                            . maybe (error "MutationOrder.EdgeProb.edgeProbScoreMatrix") id
                            $ B.lookupR mutationPositions k | k <- [0..n]
                            ]
+        rowsums = HM.fromListWith (+) [ (f,p) | (f :-> t, p) <- xs' ]
+        nprobs = fromAssocs 0 hh 1 [ (f,1-p) | f <- [0..hh], let p = rowsums HM.! f ]
 

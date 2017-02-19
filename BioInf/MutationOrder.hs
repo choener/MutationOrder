@@ -29,6 +29,7 @@ module BioInf.MutationOrder
   , ScaleFunction (..)
   ) where
 
+import           Data.Bits
 import           Numeric.Log
 import           Data.List (groupBy,sortBy)
 import           Data.Function (on)
@@ -42,11 +43,13 @@ import qualified Data.Text.IO as T
 import           Text.Printf
 import           Data.Ord (comparing)
 import qualified Data.Map.Strict as M
+import qualified Data.HashMap.Strict as HM
 
 import qualified Data.Bijection.HashMap as B
 import           Diagrams.TwoD.ProbabilityGrid
-import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..))
+import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..))
 import qualified ShortestPath.SHP.Edge.MinDist as SHP
+import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
 
 import           BioInf.MutationOrder.RNA
 import           BioInf.MutationOrder.MinDist
@@ -98,8 +101,25 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   let eprobs = edgeProbScoreMatrix ls eps
   let (Exp maxprob,mpbt) = SHP.runMaxEdgeProb eprobs
   printf "Maximal Edge Log-Probability Sum: %6.4f\n" maxprob
-  putStrLn "From extant to ancestral, most recent to first mutation:\n"
-  forM_ mpbt $ \bt -> T.putStrLn bt
+  putStrLn "first mutation to extant species\n"
+  forM_ mpbt $ \bt -> do
+    let extractMut (SHP.BTnode (_:.To n)) = n
+        extractMut (SHP.BTedge (From ff:.To tt)) = ff
+    let mutationOrder = tail $ scanl (\set mut -> set `setBit` extractMut mut) zeroBits (reverse bt)
+    let prettyPrint mut k = do
+          let rna = rnas ls HM.! mut
+          printf "   %3s  %s\n        %s   MFE %6.4f\n        %s   CNT %6.4f\n"
+                  (maybe "anc" (show . (+1) . fst . (!!) mpks) k)
+                  (BS.unpack $ primarySequence rna)
+                  (BS.unpack $ mfeStructure rna)
+                  (mfeEnergy rna)
+                  (BS.unpack $ centroidStructure rna)
+                  (centroidEnergy rna)
+    prettyPrint zeroBits Nothing
+    forM_ (zip (reverse bt) mutationOrder) $ \case
+      (SHP.BTnode (_:.To n),mut) -> prettyPrint mut (Just n)
+      (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just ff)
+    putStrLn ""
   putStrLn ""
 {-# NoInline runMutationOrder #-}
 
