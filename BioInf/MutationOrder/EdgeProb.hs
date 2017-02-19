@@ -15,6 +15,7 @@ import qualified Data.HashMap.Strict as HM
 import           Data.Bits
 import           Debug.Trace
 
+import qualified Data.Bijection.HashMap as B
 import           ADP.Fusion.Core
 import           ADP.Fusion.EdgeBoundary
 import           ADP.Fusion.Set1
@@ -22,7 +23,7 @@ import           Data.PrimitiveArray hiding (toList)
 import           Data.PrimitiveArray.ScoreMatrix
 import           Diagrams.TwoD.ProbabilityGrid
 import           FormalLanguage
-import           ShortestPath.SHP.EdgeProbIO
+import           ShortestPath.SHP.Grammar.EdgeProbIO
 import           Data.Vector.Generic.Unstream
 
 import           BioInf.MutationOrder.RNA
@@ -135,10 +136,15 @@ edgeProbPartFun scaled temperature landscape =
 
 -- | Turn the edge probabilities into a score matrix.
 
-edgeProbScoreMat :: [(EdgeBoundary I, Log Double)] -> ScoreMatrix (Log Double)
-edgeProbScoreMat xs' = ScoreMatrix m V.empty V.empty
+edgeProbScoreMatrix :: Landscape -> [(EdgeBoundary C, Log Double)] -> ScoreMatrix (Log Double)
+edgeProbScoreMatrix Landscape{..} xs' = ScoreMatrix m names names
   where m = fromAssocs l h 0 xs
         l = (Z:.0:.0)
         h = (Z:.maximum [f | (f :-> _,_) <- xs']:.maximum [t | (_ :-> t,_) <- xs'])
         xs = [ ((Z:.f:.t),p) | (f :-> t, p) <- xs' ]
+        (_,Z:._:.n) = bounds m
+        names = V.fromList [ T.pack . show . (+1)
+                           . maybe (error "MutationOrder.EdgeProb.edgeProbScoreMatrix") id
+                           $ B.lookupR mutationPositions k | k <- [0..n]
+                           ]
 

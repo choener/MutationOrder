@@ -75,7 +75,6 @@ library
     BioInf.MutationOrder.EdgeProb
     BioInf.MutationOrder.MinDist
     BioInf.MutationOrder.RNA
---    BioInf.MutationOrder.ScoreMat
   default-extensions: BangPatterns
                     , CPP
                     , DeriveDataTypeable

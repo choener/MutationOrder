@@ -33,7 +33,7 @@ import           ADP.Fusion.Set1
 import           ADP.Fusion.Unit
 import           Data.PrimitiveArray hiding (toList,map)
 import           FormalLanguage
-import           ShortestPath.SHP.MinDist
+import           ShortestPath.SHP.Grammar.MinDist
 
 import           BioInf.MutationOrder.RNA
 

@@ -46,6 +46,7 @@ import qualified Data.Map.Strict as M
 import qualified Data.Bijection.HashMap as B
 import           Diagrams.TwoD.ProbabilityGrid
 import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..))
+import qualified ShortestPath.SHP.Edge.MinDist as SHP
 
 import           BioInf.MutationOrder.RNA
 import           BioInf.MutationOrder.MinDist
@@ -54,15 +55,25 @@ import           BioInf.MutationOrder.EdgeProb
 
 
 runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temperature [ancestralFP,currentFP] = do
+  --
+  -- Initial stuff and debug information
+  --
   ancestral <- stupidReader ancestralFP
   current   <- stupidReader currentFP
   ls <- withDumpFile workdb ancestral current $ createRNAlandscape verbose ancestral current
   print $ mutationCount ls
+  --
+  -- Run co-optimal lowest energy changes
+  --
   let (e,bs) = runCoOptDist scaleFunction ls
   printf "Best energy gain: %10.4f\n" e
   printf "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
   putStrLn ""
   forM_ (take cooptPrint bs) T.putStrLn
+  --
+  -- Run edge probability Inside/Outside calculations. These take quite
+  -- a while longer.
+  --
   let (ibs,eps) = edgeProbPartFun scaleFunction temperature ls
   let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
   putStr "       "
@@ -81,6 +92,15 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   putStr "    Σ  "
   forM_ (M.toList colSums) $ \(c,Exp p) -> printf (" %6.4f") (exp p)
   putStrLn "\n"
+  --
+  -- Generate the path with maximal edge probability
+  --
+  let eprobs = edgeProbScoreMatrix ls eps
+  let (Exp maxprob,mpbt) = SHP.runMaxEdgeProb eprobs
+  printf "Maximal Edge Log-Probability Sum: %6.4f\n" maxprob
+  putStrLn "From extant to ancestral, most recent to first mutation:\n"
+  forM_ mpbt $ \bt -> T.putStrLn bt
+  putStrLn ""
 {-# NoInline runMutationOrder #-}
 
 -- | Stupid fasta reader
@@ -127,97 +147,4 @@ withDumpFile fp ancestral current l = do
     printf "database %s does not exist! Folding all intermediate structures. This may take a while!\n" fp
     toFileJSON fp l
     return l
-
-{-
-
-module BioInf.HoxCluster
-  ( runHoxCluster
-  , FillWeight (..)
-  , FillStyle (..)
-  ) where
-
-import           Control.Monad (forM_)
-import           Data.Function (on)
-import           Data.List (groupBy)
-import           Numeric.Log
-import qualified Data.Text as T
-import qualified Data.Text.IO as T
-import           System.FilePath (addExtension)
-import           System.IO (withFile,IOMode(WriteMode))
-import           Text.Printf
-
-import           Data.PrimitiveArray (fromEdgeBoundaryFst)
-import           Diagrams.TwoD.ProbabilityGrid
-
-import           BioInf.HoxCluster.EdgeProb (edgeProbScoreMat, edgeProbPartFun)
-import           BioInf.HoxCluster.MinDist (runMaxEdgeProb, runCoOptDist, boundaryPartFun)
-import           BioInf.HoxCluster.ScoreMat
-
-
-
-runHoxCluster
-  :: FillWeight
-  -> FillStyle
-  -> Double
-  -- ^ "Temperature" for probability-related parts of the algorithms.
-  -- Lower temperatures favor a single path.
-  -> FilePath
-  -- ^ The input score matrix
-  -> String
-  -- ^ In the current directory, create output files with this name prefix
-  -> IO ()
-runHoxCluster fw fs temperature inFile filePrefix = do
-  scoreMat <- fromFile inFile
-  let lon = listOfNames scoreMat
-  let n = length lon
-  let lns = map T.unpack lon
-  let bcols = maximum $ map T.length $ lon
-  withFile (filePrefix `addExtension` ".run") WriteMode $ \hrun -> do
-    hPrintf hrun ("Input File: %s\n") inFile
-    hPrintf hrun ("Temperature: %f\n") temperature
-    hPrintf hrun ("\n")
-    let (minD, minDcoopts) = runCoOptDist scoreMat
-    --
-    -- Print the minimal distance and the co-optimal paths
-    --
-    hPrintf hrun "Minimal Distance: %6.3f\n" minD
-    hPrintf hrun "Optimal Paths:\n"
-    forM_ minDcoopts (T.hPutStrLn hrun)
-    hPrintf hrun "\n"
-    --
-    -- end probabilities, both to the output file and create pretty file
-    --
-    hPrintf hrun "Chain Begin/End Probabilities:\n"
-    let bps = boundaryPartFun temperature scoreMat
-    forM_ lon $ hPrintf hrun ("%" ++ show (bcols + 4) ++ "s")
-    hPrintf hrun "\n"
-    forM_ bps $ \(_, Exp p) -> hPrintf hrun ("%" ++ show (bcols + 4) ++ ".4f") (exp p)
-    hPrintf hrun "\n"
-    hPrintf hrun "\n"
-    svgGridFile (filePrefix `addExtension` "boundary.svg") fw fs 1 n [] lns (Prelude.map snd bps)
-    --
-    -- edge probabilities, output file and pretty file
-    --
-    hPrintf hrun "Edge Probabilities:\n"
-    let eps = edgeProbPartFun temperature scoreMat
-    hPrintf hrun ("%" ++ show (bcols + 4) ++ "s") ("" :: String)
-    forM_ lon $ hPrintf hrun ("%" ++ show (bcols + 4) ++ "s")
-    hPrintf hrun "\n"
-    forM_ (groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps) $ \rps -> do
-      let (eb,_) = head rps
-      hPrintf hrun ("%" ++ show (bcols + 4) ++ "s") (lon !! fromEdgeBoundaryFst eb)
-      forM_ rps $ \(eb,Exp p) -> hPrintf hrun ("%" ++ show (bcols + 4) ++ ".4f") (exp p)
-      hPrintf hrun "\n"
-    svgGridFile (filePrefix `addExtension` "edge.svg") fw fs n n lns lns (Prelude.map snd eps)
-    --
-    -- maximum probability path
-    --
-    hPrintf hrun "\n"
-    let probMat = edgeProbScoreMat scoreMat eps
-    let (Exp maxP, maxPcoopts) = runMaxEdgeProb probMat
-    hPrintf hrun "Maximal Log-Probability Path Score: %6.3f\n" maxP
-    forM_ maxPcoopts (T.hPutStrLn hrun)
-    hPrintf hrun "\n"
-
--}
 
