@@ -29,35 +29,35 @@ module BioInf.MutationOrder
   , ScaleFunction (..)
   ) where
 
-import           Data.Bits
-import           Numeric.Log
-import           Data.List (groupBy,sortBy)
-import           Data.Function (on)
 import           Control.Monad (unless,forM_)
+import           Data.Bits
 import           Data.ByteString (ByteString)
+import           Data.Function (on)
+import           Data.List (groupBy,sortBy)
+import           Data.Ord (comparing)
+import           Numeric.Log
 import qualified Data.ByteString.Char8 as BS
-import           System.Directory (doesFileExist)
-import           System.Exit (exitFailure)
+import qualified Data.HashMap.Strict as HM
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import           System.Directory (doesFileExist)
+import           System.Exit (exitFailure)
 import           Text.Printf
-import           Data.Ord (comparing)
-import qualified Data.Map.Strict as M
-import qualified Data.HashMap.Strict as HM
 
-import qualified Data.Bijection.HashMap as B
-import           Diagrams.TwoD.ProbabilityGrid
-import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..))
-import qualified ShortestPath.SHP.Edge.MinDist as SHP
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
+import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..))
+import           Diagrams.TwoD.ProbabilityGrid
+import qualified Data.Bijection.HashMap as B
+import qualified ShortestPath.SHP.Edge.MinDist as SHP
 
-import           BioInf.MutationOrder.RNA
-import           BioInf.MutationOrder.MinDist
 import           BioInf.MutationOrder.EdgeProb
+import           BioInf.MutationOrder.MinDist
+import           BioInf.MutationOrder.RNA
 
 
 
-runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temperature [ancestralFP,currentFP] = do
+runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint fignames workdb temperature [ancestralFP,currentFP] = do
   --
   -- Initial stuff and debug information
   --
@@ -79,6 +79,7 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   --
   let (ibs,eps) = edgeProbPartFun scaleFunction temperature ls
   let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
+  let nn = length mpks
   putStr "       "
   forM_ mpks $ \(mp,k) -> printf " %6d" k
   putStrLn ""
@@ -95,14 +96,15 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint workdb temper
   putStr "    Σ  "
   forM_ (M.toList colSums) $ \(c,Exp p) -> printf (" %6.4f") (exp p)
   putStrLn "\n"
+  gridFile [SVG,EPS] (fignames ++ "edge") fw fs nn nn (map (show . (+1) . fst) mpks) (map (show . (+1) . fst) mpks) (map snd eps)
   --
   -- Generate the path with maximal edge probability
   --
   let eprobs = edgeProbScoreMatrix ls eps
   let (Exp maxprob,mpbt) = SHP.runMaxEdgeProb eprobs
-  printf "Maximal Edge Log-Probability Sum: %6.4f\n" maxprob
+  printf "Maximal Edge Log-Probability Sum: %6.4f with at least %d co-optimal paths\n" maxprob (length $ take cooptCount mpbt)
   putStrLn "first mutation to extant species\n"
-  forM_ mpbt $ \bt -> do
+  forM_ (take cooptPrint mpbt) $ \bt -> do
     let extractMut (SHP.BTnode (_:.To n)) = n
         extractMut (SHP.BTedge (From ff:.To tt)) = ff
     let mutationOrder = tail $ scanl (\set mut -> set `setBit` extractMut mut) zeroBits (reverse bt)

@@ -17,18 +17,20 @@ data Options = Options
   , scalefunction :: ScaleFunction
   , cooptcount    :: Int
   , cooptprint    :: Int
+  , figurenames   :: String
   }
   deriving (Show,Data,Typeable)
 
 oOptions = Options
   { infiles       = def &= args
   , workdb        = "work.db" &= help "name of the database to store intermediates in"
-  , temperature   = 0.01  &= help "lower temperatures favor the more optimal paths, defaults to 0.01"
+  , temperature   = 1.0  &= help "lower temperatures favor the more optimal paths, defaults to 0.01"
   , fillweight    = FWlog
   , fillstyle     = FSfull
   , scalefunction = ScaleId
   , cooptcount    = 100000
   , cooptprint    = 2
+  , figurenames   = "fig-"
   } &= verbosity
 
 main :: IO ()
@@ -36,5 +38,5 @@ main = do
   Options{..} <- cmdArgs oOptions
   isL <- isLoud
   return ()
-  runMutationOrder isL fillweight fillstyle scalefunction cooptcount cooptprint workdb temperature infiles
+  runMutationOrder isL fillweight fillstyle scalefunction cooptcount cooptprint figurenames workdb temperature infiles
 
