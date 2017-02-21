@@ -37,6 +37,5 @@ main :: IO ()
 main = do
   Options{..} <- cmdArgs oOptions
   isL <- isLoud
-  return ()
   runMutationOrder isL fillweight fillstyle scalefunction cooptcount cooptprint figurenames workdb temperature infiles
 

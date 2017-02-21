@@ -96,7 +96,7 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint fignames work
   putStr "    Σ  "
   forM_ (M.toList colSums) $ \(c,Exp p) -> printf (" %6.4f") (exp p)
   putStrLn "\n"
-  gridFile [SVG,EPS] (fignames ++ "edge") fw fs nn nn (map (show . (+1) . fst) mpks) (map (show . (+1) . fst) mpks) (map snd eps)
+  gridFile [SVG,EPS] (fignames ++ "-edge") fw fs nn nn (map (show . (+1) . fst) mpks) (map (show . (+1) . fst) mpks) (map snd eps)
   --
   -- Generate the path with maximal edge probability
   --
