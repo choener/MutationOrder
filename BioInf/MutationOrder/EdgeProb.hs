@@ -27,7 +27,7 @@ import           ShortestPath.SHP.Grammar.EdgeProbIO
 import           Data.Vector.Generic.Unstream
 
 import           BioInf.MutationOrder.RNA
-import           BioInf.MutationOrder.MinDist (ScaleFunction(..),scaleFunction)
+import           BioInf.MutationOrder.MinDist (ScaleFunction(..))
 
 
 
@@ -36,18 +36,19 @@ import           BioInf.MutationOrder.MinDist (ScaleFunction(..),scaleFunction)
 -- TODO the @Edge@ needs to be an @EdgeWithActive@ to get the active bits
 -- on the left in the set.
 
-aInside :: Monad m => ScaleFunction -> Landscape -> Double -> SigEdgeProb m (Log Double) (Log Double) (Int:.From:.To) (Int:.To)
-aInside scaled Landscape{..} temperature = SigEdgeProb
+aInside :: Monad m => ScaleFunction -> Landscape -> SigEdgeProb m (Log Double) (Log Double) (Int:.From:.To) (Int:.To)
+aInside scaled Landscape{..} = SigEdgeProb
   { edge = \x (fset:.From f:.To t) ->
       let frna = rnas HM.! (BitSet fset)
           trna = rnas HM.! (BitSet fset `xor` bit t)
-          fene = centroidEnergy frna
-          tene = centroidEnergy trna
-          res' = scaleFunction scaled (tene - fene) / s
+--          fene = centroidEnergy frna
+--          tene = centroidEnergy trna
+--          res' = scaleFunction scaled (tene - fene) / s
+          res' = scaled frna trna
           res  = Exp . negate $ res'
       in
 #ifdef ADPFUSION_DEBUGOUTPUT
-          traceShow ("Edge",(BitSet fset,f,t),frna,fene,trna,tene,' ',res',res,x,x*res) $
+          traceShow ("Edge",(BitSet fset,f,t),frna,trna,' ',res',res,x,x*res) $
 #endif
           x * res
   , mpty = \() ->
@@ -58,32 +59,33 @@ aInside scaled Landscape{..} temperature = SigEdgeProb
   , node = \x (nset:.To n) ->
       let frna = rnas HM.! (BitSet nset)
           trna = rnas HM.! (BitSet nset `xor` bit n)
-          fene = centroidEnergy frna
-          tene = centroidEnergy trna
-          res' = scaleFunction scaled (tene - fene) / s
+--          fene = centroidEnergy frna
+--          tene = centroidEnergy trna
+--          res' = scaleFunction scaled (tene - fene) / s
+          res' = scaled frna trna
           res  = Exp . negate $ res'
       in
 #ifdef ADPFUSION_DEBUGOUTPUT
-          traceShow ("Node",n,frna,fene,trna,tene,' ',res',res,x,res*x) $
+          traceShow ("Node",n,frna,trna,' ',res',res,x,res*x) $
 #endif
           x * res
   , fini = \l (fset:.From f:.To t) r ->
       let frna = rnas HM.! (BitSet fset)
           trna = rnas HM.! (BitSet fset `xor` bit t)
-          fene = centroidEnergy frna
-          tene = centroidEnergy trna
-          res' = scaleFunction scaled (tene - fene) / s
+--          fene = centroidEnergy frna
+--          tene = centroidEnergy trna
+--          res' = scaleFunction scaled (tene - fene) / s
+          res' = scaled frna trna
           res  = Exp . negate $ res'
       in
 #ifdef ADPFUSION_DEBUGOUTPUT
-          traceShow ("Fini",(BitSet fset,f,t),frna,fene,trna,tene,' ',res',res,l,r,l*r*res) $
+          traceShow ("Fini",(BitSet fset,f,t),frna,trna,' ',res',res,l,r,l*r*res) $
 #endif
           l * r * res
   , h    = SM.foldl' (+) 0
 --  , h    = \s -> do v :: V.Vector (Log Double) <- streamToVectorM s
 --                    return $ Numeric.Log.sum v
-  } where !s = temperature
-          !n = fromIntegral mutationCount
+  } where !n = fromIntegral mutationCount
 {-# Inline aInside #-}
 
 
@@ -92,20 +94,14 @@ type TF1 x = TwITbl Id Unboxed EmptyOk (BS1 Last I)      x
 type TL1 x = TwITbl Id Unboxed EmptyOk (BS1 Last O)      x
 type EB  x = TwITbl Id Unboxed EmptyOk (EdgeBoundary C)   x
 
-{-
-type BF1 x b = TwITblBt Unboxed EmptyOk (BS1 Last I)    x Id Id b
-type BL1 x b = TwITblBt Unboxed EmptyOk (BS1 Last O)    x Id Id b
-type BEB x b = TwITblBt Unboxed EmptyOk (EdgeBoundary I) x Id Id b
--}
-
 
 
 -- | Extract the individual partition scores.
 
-edgeProbPartFun :: ScaleFunction -> Double -> Landscape -> ([(Boundary Last I, Log Double)], [(EdgeBoundary C, Log Double)])
-edgeProbPartFun scaled temperature landscape =
+edgeProbPartFun :: ScaleFunction -> Landscape -> ([(Boundary Last I, Log Double)], [(EdgeBoundary C, Log Double)])
+edgeProbPartFun scaled landscape =
   let n       = mutationCount landscape
-      (Z:.sF:.sL:.sZ) = mutateTablesST $ gEdgeProb (aInside scaled landscape temperature)
+      (Z:.sF:.sL:.sZ) = mutateTablesST $ gEdgeProb (aInside scaled landscape)
                           (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 0 []))
                           (ITbl 1 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 0 []))
                           (ITbl 2 0 EmptyOk (fromAssocs (0 :-> 0)    (0 :-> (n-1))                  0 []))

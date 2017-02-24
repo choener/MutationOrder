@@ -39,10 +39,17 @@ import           BioInf.MutationOrder.RNA
 
 
 
+{-
 data ScaleFunction
   = ScaleId
   | ScalePositiveSquared
   deriving (Show,Data,Typeable)
+-}
+
+-- | Given the 'RNA' we come from and the 'RNA' we mutate into, derive the
+-- gain or loss by a scaling function.
+
+type ScaleFunction = RNA -> RNA -> Double
 
 -- | Minimal distance algebra
 --
@@ -53,34 +60,23 @@ aMinDist scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                       in  -- traceShow (BitSet fset, BitSet fset `setBit` f `setBit` t) $
-                                          x + scaleFunction scaled (centroidEnergy trna - centroidEnergy frna)
+                                          -- x + scaleFunction scaled (centroidEnergy trna - centroidEnergy frna)
+                                          x + scaled frna trna
   , mpty = \() -> 0
   , node = \(nset:.To n) ->
       let frna = rnas HM.! (BitSet 0)
           trna = rnas HM.! (BitSet 0 `setBit` n)
-      in  scaleFunction scaled $ centroidEnergy trna - centroidEnergy frna
+      in  -- scaleFunction scaled $ centroidEnergy trna - centroidEnergy frna
+          scaled frna trna
   , fini = id
   , h    = SM.foldl' min 999999
   }
 {-# Inline aMinDist #-}
 
+{-
 scaleFunction ScaleId = id
 scaleFunction ScalePositiveSquared = \x -> if x <= 0 then x else x*x
 {-# Inline scaleFunction #-}
-
-{-
--- | Maximum edge probability following the probabilities generated from
--- the @EdgeProb@ grammar.
-
-aMaxEdgeProb :: Monad m => ScoreMat (Log Double) -> SigMinDist m (Log Double) (Log Double) (From:.To) Int
-aMaxEdgeProb s = SigMinDist
-  { edge = \x e -> x * (s .!. e)
-  , mpty = \() -> 1
-  , node = \n -> 1
-  , fini = id
-  , h    = SM.foldl' max 0
-  }
-{-# Inline aMaxEdgeProb #-}
 -}
 
 -- | This should give the correct order of nodes independent of the
@@ -89,15 +85,16 @@ aMaxEdgeProb s = SigMinDist
 --
 -- TODO Use text builder
 
-aPretty :: Monad m => Landscape -> SigMinDist m Text [Text] (Int:.From:.To) (Int:.To)
-aPretty Landscape{..} = SigMinDist
+aPretty :: Monad m => ScaleFunction -> Landscape -> SigMinDist m Text [Text] (Int:.From:.To) (Int:.To)
+aPretty scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
                                           eM = mfeEnergy trna - mfeEnergy frna
                                           eC = centroidEnergy trna - centroidEnergy frna
+                                          eS = scaled frna trna
                                           f' = fromJust $ B.lookupR mutationPositions f
                                           t' = fromJust $ B.lookupR mutationPositions t
-                                      in  T.concat [x, showMut frna trna f' eM eC]
+                                      in  T.concat [x, showMut frna trna f' eM eC eS]
   , mpty = \()  -> ""
   , node = \(nset:.To n)  ->
       let
@@ -106,22 +103,23 @@ aPretty Landscape{..} = SigMinDist
         n'   = fromJust $ B.lookupR mutationPositions n
         eM   = mfeEnergy trna - mfeEnergy frna
         eC   = centroidEnergy trna - centroidEnergy frna
-      in  T.concat [showHdr frna n', showMut frna trna n' eM eC]
+        eS   = scaled frna trna
+      in  T.concat [showHdr frna n', showMut frna trna n' eM eC eS]
   , fini = id
   , h    = SM.toList
   } where
       showHdr frna n = T.concat
-        [ T.pack $ printf "mutation         mfe     centr   "
+        [ T.pack $ printf "mutation         mfe    centr  scfun  "
         , T.pack $ VU.toList $ VU.replicate (BS.length $ primarySequence frna) ' ' VU.// (map (,'v') . sort . map fst $ B.toList mutationPositions)
-        , T.pack $ "\n" ++ replicate 33 ' '
+        , T.pack $ "\n" ++ replicate 38 ' '
         , T.pack . take (BS.length $ primarySequence frna) . concat $ zipWith (\xs x -> xs ++ show x) (repeat $ "    .    ") (drop 1 $ cycle [0..9])
         , "\n"
-        , T.pack $ printf "ancestral        %5.1f   %5.1f   " (mfeEnergy frna) (centroidEnergy frna)
+        , T.pack $ printf "ancestral        %5.1f  %5.1f         " (mfeEnergy frna) (centroidEnergy frna)
         , T.pack $ BS.unpack $ primarySequence frna
         , "\n"
         ]
-      showMut frna trna n eM eC = T.concat
-        [ T.pack $ printf "%5d            %5.1f   %5.1f   " (n+1) eM eC
+      showMut frna trna n eM eC eS = T.concat
+        [ T.pack $ printf "%5d            %5.1f  %5.1f  %5.1f  " (n+1) eM eC eS
         , T.pack . BS.unpack $ primarySequence trna
         , "\n"
         ]
@@ -139,21 +137,6 @@ aCount Landscape{..} = SigMinDist
   }
 {-# Inline aCount #-}
 
-{-
--- | Before using @aInside@ the @ScoreMat@ needs to be scaled
--- appropriately! Due to performance reasons we don't want to do this
--- within @aInside@.
-
-aInside :: Monad m => ScoreMat (Log Double) -> SigMinDist m (Log Double) (Log Double) (From:.To) Int
-aInside s = SigMinDist
-  { edge = \x e -> s .!. e * x
-  , mpty = \() -> 1
-  , node = \n -> 1
-  , fini = id
-  , h    = SM.foldl' (+) 0
-  }
-{-# Inline aInside #-}
--}
 
 
 type TS1 x = TwITbl Id Unboxed EmptyOk (BS1 First I)      x
@@ -182,7 +165,7 @@ forwardMinDist1 scaleFunction landscape =
 
 backtrackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1 Double:.U Double -> [Text]
 backtrackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
-  where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aPretty landscape)
+  where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aPretty scaleFunction landscape)
                             (toBacktrack ts1 (undefined :: Id a -> Id a))
                             (toBacktrack u   (undefined :: Id a -> Id a))
                             EdgeWithSet

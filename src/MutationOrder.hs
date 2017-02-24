@@ -6,7 +6,11 @@ import System.FilePath
 
 import BioInf.MutationOrder
 
-
+data ScoreType
+  = Mfe
+  | Centroid
+  | StructureDistance
+  deriving (Show,Data,Typeable)
 
 data Options = Options
   { infiles       :: [FilePath]
@@ -14,28 +18,37 @@ data Options = Options
   , temperature   :: Double
   , fillweight    :: FillWeight
   , fillstyle     :: FillStyle
-  , scalefunction :: ScaleFunction
   , cooptcount    :: Int
   , cooptprint    :: Int
   , figurenames   :: String
+  , scoretype     :: ScoreType
+  , positivesquared :: Bool
   }
   deriving (Show,Data,Typeable)
 
 oOptions = Options
   { infiles       = def &= args
   , workdb        = "work.db" &= help "name of the database to store intermediates in"
-  , temperature   = 1.0  &= help "lower temperatures favor the more optimal paths, defaults to 0.01"
+  , temperature   = 1.0  &= help "lower temperatures favor the more optimal paths, defaults to 1.0"
   , fillweight    = FWlog
   , fillstyle     = FSfull
-  , scalefunction = ScaleId
   , cooptcount    = 100000
   , cooptprint    = 2
   , figurenames   = "fig-"
+  , scoretype     = Centroid &= help "choose 'mfe', 'centroid', or 'structuredistance' for the evaluation of each mutational step"
+  , positivesquared = False &= help "square positive energies to penalize worse structures"
   } &= verbosity
 
 main :: IO ()
 main = do
   Options{..} <- cmdArgs oOptions
   isL <- isLoud
-  runMutationOrder isL fillweight fillstyle scalefunction cooptcount cooptprint figurenames workdb temperature infiles
+  let fwdScaleFunction
+        = (if positivesquared then squaredPositive else id)
+        $ (case scoretype of Mfe -> mfeDelta; Centroid -> centroidDelta;)
+  let insideScaleFunction
+        = scaleTemperature temperature
+        . (if positivesquared then squaredPositive else id)
+        $ (case scoretype of Mfe -> mfeDelta; Centroid -> centroidDelta;)
+  runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint figurenames workdb temperature infiles
 

@@ -57,7 +57,7 @@ import           BioInf.MutationOrder.RNA
 
 
 
-runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint fignames workdb temperature [ancestralFP,currentFP] = do
+runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount cooptPrint fignames workdb temperature [ancestralFP,currentFP] = do
   --
   -- Initial stuff and debug information
   --
@@ -68,7 +68,7 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint fignames work
   --
   -- Run co-optimal lowest energy changes
   --
-  let (e,bs) = runCoOptDist scaleFunction ls
+  let (e,bs) = runCoOptDist fwdScaleFunction ls
   printf "Best energy gain: %10.4f\n" e
   printf "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
   putStrLn ""
@@ -77,7 +77,7 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint fignames work
   -- Run edge probability Inside/Outside calculations. These take quite
   -- a while longer.
   --
-  let (ibs,eps) = edgeProbPartFun scaleFunction temperature ls
+  let (ibs,eps) = edgeProbPartFun probScaleFunction ls
   let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
   let nn = length mpks
   putStr "       "
@@ -124,6 +124,41 @@ runMutationOrder verbose fw fs scaleFunction cooptCount cooptPrint fignames work
     putStrLn ""
   putStrLn ""
 {-# NoInline runMutationOrder #-}
+
+-- | Scale function for normal mfe delta energies
+
+mfeDelta :: ScaleFunction
+mfeDelta frna trna = mfeEnergy trna - mfeEnergy frna
+{-# Inlinable mfeDelta #-}
+
+-- | Scale function for normal centroid delta energies
+
+centroidDelta :: ScaleFunction
+centroidDelta frna trna = centroidEnergy trna - centroidEnergy frna
+{-# Inlinable centroidDelta #-}
+
+-- | Square positive "contributions", making bad moves more unlikely
+
+squaredPositive :: ScaleFunction -> ScaleFunction
+squaredPositive sf = scaleByFunction sp sf where
+  sp d
+    | d > 0     = d * d
+    | otherwise = d
+  {-# Inline sp #-}
+{-# Inlinable squaredPositive #-}
+
+-- | Scale by temperature (for probability stuff)
+
+scaleTemperature :: Double -> ScaleFunction -> ScaleFunction
+scaleTemperature t sf = scaleByFunction (/t) sf
+{-# Inlinable scaleTemperature #-}
+
+scaleByFunction f sf = \frna trna ->
+  let d = sf frna trna
+  in  f d
+{-# Inlinable scaleByFunction #-}
+
+-- | Basepair distance
 
 -- | Stupid fasta reader
 
