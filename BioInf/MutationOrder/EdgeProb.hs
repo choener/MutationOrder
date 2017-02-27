@@ -41,9 +41,6 @@ aInside scaled Landscape{..} = SigEdgeProb
   { edge = \x (fset:.From f:.To t) ->
       let frna = rnas HM.! (BitSet fset)
           trna = rnas HM.! (BitSet fset `xor` bit t)
---          fene = centroidEnergy frna
---          tene = centroidEnergy trna
---          res' = scaleFunction scaled (tene - fene) / s
           res' = scaled frna trna
           res  = Exp . negate $ res'
       in
@@ -59,9 +56,6 @@ aInside scaled Landscape{..} = SigEdgeProb
   , node = \x (nset:.To n) ->
       let frna = rnas HM.! (BitSet nset)
           trna = rnas HM.! (BitSet nset `xor` bit n)
---          fene = centroidEnergy frna
---          tene = centroidEnergy trna
---          res' = scaleFunction scaled (tene - fene) / s
           res' = scaled frna trna
           res  = Exp . negate $ res'
       in
@@ -72,9 +66,6 @@ aInside scaled Landscape{..} = SigEdgeProb
   , fini = \l (fset:.From f:.To t) r ->
       let frna = rnas HM.! (BitSet fset)
           trna = rnas HM.! (BitSet fset `xor` bit t)
---          fene = centroidEnergy frna
---          tene = centroidEnergy trna
---          res' = scaleFunction scaled (tene - fene) / s
           res' = scaled frna trna
           res  = Exp . negate $ res'
       in

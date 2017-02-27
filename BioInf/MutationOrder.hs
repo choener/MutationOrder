@@ -64,6 +64,8 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   ancestral <- stupidReader ancestralFP
   current   <- stupidReader currentFP
   ls <- withDumpFile workdb ancestral current $ createRNAlandscape verbose ancestral current
+  let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
+  let nn = length mpks
   print $ mutationCount ls
   --
   -- Run co-optimal lowest energy changes
@@ -73,13 +75,27 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   printf "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
   putStrLn ""
   forM_ (take cooptPrint bs) T.putStrLn
+  -- Run @First@ probability algorithm to determine the probability for
+  -- each mutation to be the initial one
+  printf "Chain begin probabilities:\n"
+  let fps = boundaryPartFunFirst probScaleFunction ls
+  forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
+  printf "\n"
+  forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
+  printf "\n\n"
+  -- Run @First@ probability algorithm to determine the probability for
+  -- each mutation to be the initial one
+  printf "Chain end probabilities:\n"
+  let fps = boundaryPartFunLast probScaleFunction ls
+  forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
+  printf "\n"
+  forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
+  printf "\n\n"
   --
   -- Run edge probability Inside/Outside calculations. These take quite
   -- a while longer.
   --
   let (ibs,eps) = edgeProbPartFun probScaleFunction ls
-  let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
-  let nn = length mpks
   putStr "       "
   forM_ mpks $ \(mp,k) -> printf " %6d" k
   putStrLn ""
@@ -117,6 +133,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
                   (mfeEnergy rna)
                   (BS.unpack $ centroidStructure rna)
                   (centroidEnergy rna)
+          putStrLn $ replicate 8 ' ' ++ (take (BS.length $ primarySequence rna) . concat $ zipWith (\xs x -> xs ++ show x) (repeat $ "    .    ") (drop 1 $ cycle [0..9]))
     prettyPrint zeroBits Nothing
     forM_ (zip (reverse bt) mutationOrder) $ \case
       (SHP.BTnode (_:.To n),mut) -> prettyPrint mut (Just n)

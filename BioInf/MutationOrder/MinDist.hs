@@ -39,13 +39,6 @@ import           BioInf.MutationOrder.RNA
 
 
 
-{-
-data ScaleFunction
-  = ScaleId
-  | ScalePositiveSquared
-  deriving (Show,Data,Typeable)
--}
-
 -- | Given the 'RNA' we come from and the 'RNA' we mutate into, derive the
 -- gain or loss by a scaling function.
 
@@ -73,11 +66,26 @@ aMinDist scaled Landscape{..} = SigMinDist
   }
 {-# Inline aMinDist #-}
 
-{-
-scaleFunction ScaleId = id
-scaleFunction ScalePositiveSquared = \x -> if x <= 0 then x else x*x
-{-# Inline scaleFunction #-}
--}
+-- | Sum over all states and collapse into boundary unscaled weights.
+
+aInside :: Monad m => ScaleFunction -> Landscape -> SigMinDist m (Log Double) (Log Double) (Int:.From:.To) (Int:.To)
+aInside scaled Landscape{..} = SigMinDist
+  { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
+                                          trna = rnas HM.! (BitSet fset `xor` bit t)
+                                      in
+                                          -- traceShow ("edge",fset,f,t) $
+                                          x + (Exp . negate $ scaled frna trna)
+  , mpty = \() -> 1
+  , node = \(nset:.To n) ->
+      let frna = rnas HM.! (BitSet 0)
+          trna = rnas HM.! (BitSet 0 `xor` bit n)
+      in
+          -- traceShow ("node",nset,n) .
+          Exp . negate $ scaled frna trna
+  , fini = id
+  , h    = SM.foldl' (+) 0
+  }
+{-# Inline aInside #-}
 
 -- | This should give the correct order of nodes independent of the
 -- underlying @Set1 First@ or @Set1 Last@ because the @(From:.To)@ system
@@ -94,7 +102,7 @@ aPretty scaled Landscape{..} = SigMinDist
                                           eS = scaled frna trna
                                           f' = fromJust $ B.lookupR mutationPositions f
                                           t' = fromJust $ B.lookupR mutationPositions t
-                                      in  T.concat [x, showMut frna trna f' eM eC eS]
+                                      in  T.concat [x, showMut frna trna t' eM eC eS]
   , mpty = \()  -> ""
   , node = \(nset:.To n)  ->
       let
@@ -143,8 +151,13 @@ type TS1 x = TwITbl Id Unboxed EmptyOk (BS1 First I)      x
 type U   x = TwITbl Id Unboxed EmptyOk (Unit I)           x
 type PF  x = TwITbl Id Unboxed EmptyOk (Boundary First I) x
 
+type TS1L x = TwITbl Id Unboxed EmptyOk (BS1 Last I)      x
+type PFL  x = TwITbl Id Unboxed EmptyOk (Boundary Last I) x
+
 type BT1 x b = TwITblBt Unboxed EmptyOk (BS1 First I) x Id Id b
 type BTU x b = TwITblBt Unboxed EmptyOk (Unit I)      x Id Id b
+
+type BT1L x b = TwITblBt Unboxed EmptyOk (BS1 Last I) x Id Id b
 
 
 
@@ -153,7 +166,7 @@ type BTU x b = TwITblBt Unboxed EmptyOk (Unit I)      x Id Id b
 -- This produces one-boundary sets. Meaning that for each boundary we get
 -- the total distance within the set.
 
-forwardMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1 Double:.U Double
+forwardMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1L Double:.U Double
 forwardMinDist1 scaleFunction landscape =
   let n = mutationCount landscape
   in  mutateTablesST $ gMinDist (aMinDist scaleFunction landscape)
@@ -163,24 +176,24 @@ forwardMinDist1 scaleFunction landscape =
         Singleton
 {-# NoInline forwardMinDist1 #-}
 
-backtrackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1 Double:.U Double -> [Text]
+backtrackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1L Double:.U Double -> [Text]
 backtrackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
   where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aPretty scaleFunction landscape)
                             (toBacktrack ts1 (undefined :: Id a -> Id a))
                             (toBacktrack u   (undefined :: Id a -> Id a))
                             EdgeWithSet
                             Singleton
-                        :: Z:.BT1 Double Text:.BTU Double Text
+                        :: Z:.BT1L Double Text:.BTU Double Text
 {-# NoInline backtrackMinDist1 #-}
 
-countBackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1 Double:.U Double -> [Integer]
+countBackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1L Double:.U Double -> [Integer]
 countBackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
   where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aCount landscape)
                             (toBacktrack ts1 (undefined :: Id a -> Id a))
                             (toBacktrack u   (undefined :: Id a -> Id a))
                             EdgeWithSet
                             Singleton
-                        :: Z:.BT1 Double Integer:.BTU Double Integer
+                        :: Z:.BT1L Double Integer:.BTU Double Integer
 {-# NoInline countBackMinDist1 #-}
 
 -- | Given the @Set1@ produced in @forwardMinDist1@ we can now extract the
@@ -201,17 +214,15 @@ runCount scaleFunction landscape = (unId $ axiom fwdu,bs)
         bs = countBackMinDist1 scaleFunction landscape (Z:.fwd1:.fwdu)
 {-# NoInline runCount #-}
 
-{-
 -- | Extract the individual partition scores.
 
-boundaryPartFun :: Double -> ScoreMat Double -> [(Boundary First I,Log Double)]
-boundaryPartFun temperature landscape =
-  let n       = numNodes landscape
-      partMat = toPartMatrix temperature landscape
-      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside partMat)
+boundaryPartFunFirst :: ScaleFunction -> Landscape -> [(Boundary First I,Log Double)]
+boundaryPartFunFirst scaleFunction landscape =
+  let n       = mutationCount landscape
+      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside scaleFunction landscape)
                       (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (-999999) []))
                       (ITbl 1 0 EmptyOk (fromAssocs (Boundary 0) (Boundary $ n-1)               (-999999) []))
-                      Edge
+                      EdgeWithSet
                       Singleton
                     :: Z:.TS1 (Log Double):.PF (Log Double)
       TW (ITbl _ _ _ pf) _ = bM
@@ -219,56 +230,21 @@ boundaryPartFun temperature landscape =
       pssum = Numeric.Log.sum $ Prelude.map snd bs'
       bs = Prelude.map (second (/pssum)) bs'
   in bs
+{-# NoInline boundaryPartFunFirst #-}
 
-{-# NoInline boundaryPartFun #-}
-
--- | Run the maximal edge probability grammar.
-
-forwardMaxEdgeProb :: ScoreMat (Log Double) -> Z:.TS1 (Log Double):.U (Log Double)
-forwardMaxEdgeProb landscape =
-  let n = numNodes landscape
-  in  mutateTablesST $ gMinDist (aMaxEdgeProb landscape)
-        (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 0 []))
-        (ITbl 1 0 EmptyOk (fromAssocs Unit         Unit                           0 []))
-        Edge
-        Singleton
-{-# NoInline forwardMaxEdgeProb #-}
-
-backtrackMaxEdgeProb :: ScoreMat (Log Double) -> Z:.TS1 (Log Double):.U (Log Double) -> [Text]
-backtrackMaxEdgeProb landscape (Z:.ts1:.u) = unId $ axiom b
-  where !(Z:.bt1:.b) = gMinDist (aMaxEdgeProb landscape <|| aPretty landscape)
-                            (toBacktrack ts1 (undefined :: Id a -> Id a))
-                            (toBacktrack u   (undefined :: Id a -> Id a))
-                            Edge
-                            Singleton
-                        :: Z:.BT1 (Log Double) Text:.BTU (Log Double) Text
-{-# NoInline backtrackMaxEdgeProb #-}
-
--- | Given the @Set1@ produced in @forwardMinDist1@ we can now extract the
--- co-optimal paths using the @Set1 -> ()@ index change.
---
--- TODO do we want this one explicitly or make life easy and just extract
--- from all @forwardMinDist1@ paths?
-
-runMaxEdgeProb :: ScoreMat (Log Double) -> (Log Double,[Text])
-runMaxEdgeProb landscape = (unId $ axiom fwdu,bs)
-  where !(Z:.fwd1:.fwdu) = forwardMaxEdgeProb landscape
-        bs = backtrackMaxEdgeProb landscape (Z:.fwd1:.fwdu)
-{-# NoInline runMaxEdgeProb #-}
--}
-
-{-
-test t fp = do
-  sMat <- fromFile fp
-  let (d,bt) = runCoOptDist sMat
-  let ps = boundaryPartFun t sMat
-  print d
-  mapM_ print $ bt
-  print $ length bt
-  print $ length $ nub $ sort bt
-  forM_ ps $ \(b,_) -> printf "%5s  " (sMat `nameOf` getBoundary b)
-  putStrLn ""
-  forM_ ps $ \(_,Exp p) -> printf "%0.3f  " (exp p)
-  putStrLn ""
--}
+boundaryPartFunLast :: ScaleFunction -> Landscape -> [(Boundary Last I,Log Double)]
+boundaryPartFunLast scaleFunction landscape =
+  let n       = mutationCount landscape
+      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside scaleFunction landscape)
+                      (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (-999999) []))
+                      (ITbl 1 0 EmptyOk (fromAssocs (Boundary 0) (Boundary $ n-1)               (-999999) []))
+                      EdgeWithSet
+                      Singleton
+                    :: Z:.TS1L (Log Double):.PFL (Log Double)
+      TW (ITbl _ _ _ pf) _ = bM
+      bs' = assocs pf
+      pssum = Numeric.Log.sum $ Prelude.map snd bs'
+      bs = Prelude.map (second (/pssum)) bs'
+  in bs
+{-# NoInline boundaryPartFunLast #-}
 
