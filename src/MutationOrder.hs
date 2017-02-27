@@ -23,6 +23,7 @@ data Options = Options
   , figurenames   :: String
   , scoretype     :: ScoreType
   , positivesquared :: Bool
+  , onlypositive  :: Bool
   }
   deriving (Show,Data,Typeable)
 
@@ -37,6 +38,7 @@ oOptions = Options
   , figurenames   = "fig-"
   , scoretype     = Centroid &= help "choose 'mfe', 'centroid', or 'structuredistance' for the evaluation of each mutational step"
   , positivesquared = False &= help "square positive energies to penalize worse structures"
+  , onlypositive  = False &= help "minimize only over penalties, not energy gains"
   } &= verbosity
 
 main :: IO ()
@@ -45,10 +47,12 @@ main = do
   isL <- isLoud
   let fwdScaleFunction
         = (if positivesquared then squaredPositive else id)
+        . (if onlypositive then (scaleByFunction (max 0)) else id)
         $ (case scoretype of Mfe -> mfeDelta; Centroid -> centroidDelta;)
   let insideScaleFunction
         = scaleTemperature temperature
         . (if positivesquared then squaredPositive else id)
+        . (if onlypositive then (scaleByFunction (max 0)) else id)
         $ (case scoretype of Mfe -> mfeDelta; Centroid -> centroidDelta;)
   runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint figurenames workdb temperature infiles
 
