@@ -72,9 +72,10 @@ aInside :: Monad m => Maybe Int -> ScaleFunction -> Landscape -> SigMinDist m (L
 aInside restrictStartNode scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `xor` bit t)
+                                          res  = x + (Exp . negate $ scaled frna trna)
                                       in
                                           -- traceShow ("edge",fset,f,t) $
-                                          x + (Exp . negate $ scaled frna trna)
+                                          maybe res (\k -> if k==t then 0 else res) restrictStartNode
   , mpty = \() -> 1
   , node = \(nset:.To n) ->
       let frna = rnas HM.! (BitSet 0)
@@ -233,7 +234,7 @@ boundaryPartFunFirst restrictStartNode scaleFunction landscape =
   in bs
 {-# NoInline boundaryPartFunFirst #-}
 
-boundaryPartFunLast :: Maybe Int -> ScaleFunction -> Landscape -> [(Boundary Last I,Log Double)]
+boundaryPartFunLast :: Maybe Int -> ScaleFunction -> Landscape -> BoundaryPart -- [(Boundary Last I,Log Double)]
 boundaryPartFunLast restrictStartNode scaleFunction landscape =
   let n       = mutationCount landscape
       (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside restrictStartNode scaleFunction landscape)
@@ -243,9 +244,23 @@ boundaryPartFunLast restrictStartNode scaleFunction landscape =
                       Singleton
                     :: Z:.TS1L (Log Double):.PFL (Log Double)
       TW (ITbl _ _ _ pf) _ = bM
-      bs' = assocs pf
-      pssum = Numeric.Log.sum $ Prelude.map snd bs'
-      bs = Prelude.map (second (/pssum)) bs'
-  in bs
+--      bs' = assocs pf
+--      pssum = Numeric.Log.sum $ Prelude.map snd bs'
+--      bs = Prelude.map (second (/pssum)) bs'
+  in  boundaryPart $ assocs pf -- bs
 {-# NoInline boundaryPartFunLast #-}
+
+data BoundaryPart = BoundaryPart
+  { bpNormalized   :: [(Boundary Last I, Log Double)]
+  , bpUnnormalized :: [(Boundary Last I, Log Double)]
+  , bpTotal        :: Log Double
+  }
+  deriving (Show,Eq)
+
+boundaryPart ps = BoundaryPart
+  { bpNormalized   = Prelude.map (second (/pssum)) ps
+  , bpUnnormalized = ps
+  , bpTotal        = pssum
+  }
+  where pssum = Numeric.Log.sum $ Prelude.map snd ps
 

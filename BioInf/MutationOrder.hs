@@ -29,6 +29,7 @@ module BioInf.MutationOrder
   , ScaleFunction (..)
   ) where
 
+import           Data.Tuple (swap)
 import           Control.Monad (unless,forM_)
 import           Data.Bits
 import           Data.ByteString (ByteString)
@@ -44,9 +45,10 @@ import qualified Data.Text.IO as T
 import           System.Directory (doesFileExist)
 import           System.Exit (exitFailure)
 import           Text.Printf
+import           Control.Arrow (first,second)
 
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
-import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..))
+import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..), getBoundary)
 import           Diagrams.TwoD.ProbabilityGrid
 import qualified Data.Bijection.HashMap as B
 import qualified ShortestPath.SHP.Edge.MinDist as SHP
@@ -65,6 +67,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   current   <- stupidReader currentFP
   ls <- withDumpFile workdb ancestral current $ createRNAlandscape verbose ancestral current
   let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
+  let bitToNuc = M.fromList $ map (swap . first (+1)) mpks
   let nn = length mpks
   print $ mutationCount ls
   --
@@ -91,7 +94,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   let fps = boundaryPartFunLast Nothing probScaleFunction ls
   forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
   printf "\n"
-  forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
+  forM_ (bpNormalized fps) $ \(_, Exp p) -> printf "%6.4f  " (exp p)
   printf "\n\n"
   --
   -- Run specialized versions of the above, restricting the first mutation
@@ -99,7 +102,26 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   -- we get the first probability. Completely printed out, we get the joint
   -- probability for each @i,j@ to be @first,last@ in the chain.
   --
-  -- TODO actually write me
+  printf "Restricted chain end probabilities\n"
+  let rbps = map (\(mp,k) -> (mp,k,boundaryPartFunLast (Just k) probScaleFunction ls)) mpks
+  forM_ rbps $ \(mp,k,bp) -> do
+    printf "%5d %5d\n" (mp+1) k
+    forM_ (bpUnnormalized bp) $ \(l,Exp p) -> printf "%7d " (bitToNuc M.! getBoundary l)
+    printf "\n"
+    forM_ (bpUnnormalized bp) $ \(l,p) -> printf "%7.2f " (exp . ln $ p / bpTotal bp)
+    printf "\n"
+  printf "\n"
+  -- collect all restricted partition function scores and prepare for
+  -- normalization
+  let firstlastUn = M.fromList [ ((mp,bitToNuc M.! getBoundary l), logp)
+                               | (mp,k,bp) <- rbps, (l,logp) <- bpUnnormalized bp
+                               ]
+  let firstlastZ = Numeric.Log.sum [ bpTotal bp | (_,_,bp) <- rbps ]
+  let firstlastLogP = M.map (/firstlastZ) firstlastUn
+  let firstlastP = M.map (exp . ln) firstlastLogP
+  forM_ (M.elems bitToNuc) $ \frst -> do
+    forM_ (M.elems bitToNuc) $ \lst -> printf "%6.4f " (firstlastP M.! (frst,lst))
+    printf "\n"
   --
   --
   -- Run edge probability Inside/Outside calculations. These take quite
