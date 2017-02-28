@@ -68,8 +68,8 @@ aMinDist scaled Landscape{..} = SigMinDist
 
 -- | Sum over all states and collapse into boundary unscaled weights.
 
-aInside :: Monad m => ScaleFunction -> Landscape -> SigMinDist m (Log Double) (Log Double) (Int:.From:.To) (Int:.To)
-aInside scaled Landscape{..} = SigMinDist
+aInside :: Monad m => Maybe Int -> ScaleFunction -> Landscape -> SigMinDist m (Log Double) (Log Double) (Int:.From:.To) (Int:.To)
+aInside restrictStartNode scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `xor` bit t)
                                       in
@@ -79,9 +79,10 @@ aInside scaled Landscape{..} = SigMinDist
   , node = \(nset:.To n) ->
       let frna = rnas HM.! (BitSet 0)
           trna = rnas HM.! (BitSet 0 `xor` bit n)
+          res = Exp . negate $ scaled frna trna
       in
           -- traceShow ("node",nset,n) .
-          Exp . negate $ scaled frna trna
+          maybe res (\k -> if k==n then res else 0) restrictStartNode
   , fini = id
   , h    = SM.foldl' (+) 0
   }
@@ -216,10 +217,10 @@ runCount scaleFunction landscape = (unId $ axiom fwdu,bs)
 
 -- | Extract the individual partition scores.
 
-boundaryPartFunFirst :: ScaleFunction -> Landscape -> [(Boundary First I,Log Double)]
-boundaryPartFunFirst scaleFunction landscape =
+boundaryPartFunFirst :: Maybe Int -> ScaleFunction -> Landscape -> [(Boundary First I,Log Double)]
+boundaryPartFunFirst restrictStartNode scaleFunction landscape =
   let n       = mutationCount landscape
-      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside scaleFunction landscape)
+      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside restrictStartNode scaleFunction landscape)
                       (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (-999999) []))
                       (ITbl 1 0 EmptyOk (fromAssocs (Boundary 0) (Boundary $ n-1)               (-999999) []))
                       EdgeWithSet
@@ -232,10 +233,10 @@ boundaryPartFunFirst scaleFunction landscape =
   in bs
 {-# NoInline boundaryPartFunFirst #-}
 
-boundaryPartFunLast :: ScaleFunction -> Landscape -> [(Boundary Last I,Log Double)]
-boundaryPartFunLast scaleFunction landscape =
+boundaryPartFunLast :: Maybe Int -> ScaleFunction -> Landscape -> [(Boundary Last I,Log Double)]
+boundaryPartFunLast restrictStartNode scaleFunction landscape =
   let n       = mutationCount landscape
-      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside scaleFunction landscape)
+      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside restrictStartNode scaleFunction landscape)
                       (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (-999999) []))
                       (ITbl 1 0 EmptyOk (fromAssocs (Boundary 0) (Boundary $ n-1)               (-999999) []))
                       EdgeWithSet

@@ -77,20 +77,30 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   forM_ (take cooptPrint bs) T.putStrLn
   -- Run @First@ probability algorithm to determine the probability for
   -- each mutation to be the initial one
+  {-
   printf "Chain begin probabilities:\n"
   let fps = boundaryPartFunFirst probScaleFunction ls
   forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
   printf "\n"
   forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
   printf "\n\n"
-  -- Run @First@ probability algorithm to determine the probability for
-  -- each mutation to be the initial one
+  -}
+  -- Run @Last@ probability algorithm to determine the probability for
+  -- each mutation to be the last one
   printf "Chain end probabilities:\n"
-  let fps = boundaryPartFunLast probScaleFunction ls
+  let fps = boundaryPartFunLast Nothing probScaleFunction ls
   forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
   printf "\n"
   forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
   printf "\n\n"
+  --
+  -- Run specialized versions of the above, restricting the first mutation
+  -- to the given one. Marginalized over the last probability, and rescaled
+  -- we get the first probability. Completely printed out, we get the joint
+  -- probability for each @i,j@ to be @first,last@ in the chain.
+  --
+  -- TODO actually write me
+  --
   --
   -- Run edge probability Inside/Outside calculations. These take quite
   -- a while longer.
