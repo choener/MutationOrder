@@ -113,15 +113,45 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   printf "\n"
   -- collect all restricted partition function scores and prepare for
   -- normalization
-  let firstlastUn = M.fromList [ ((mp,bitToNuc M.! getBoundary l), logp)
+  let firstlastUn = M.fromList [ ((mp+1,bitToNuc M.! getBoundary l), logp)
                                | (mp,k,bp) <- rbps, (l,logp) <- bpUnnormalized bp
                                ]
   let firstlastZ = Numeric.Log.sum [ bpTotal bp | (_,_,bp) <- rbps ]
   let firstlastLogP = M.map (/firstlastZ) firstlastUn
   let firstlastP = M.map (exp . ln) firstlastLogP
+  printf "       "
+  forM_ (M.elems bitToNuc) $ \mut -> printf "%6d " mut
+  printf "\n"
   forM_ (M.elems bitToNuc) $ \frst -> do
+    printf "%4d   " frst
     forM_ (M.elems bitToNuc) $ \lst -> printf "%6.4f " (firstlastP M.! (frst,lst))
     printf "\n"
+  printf "divergence from proper normalization: %10.8f\n" (1 - foldl (+) 0 firstlastP)
+  printf "\n"
+  -- debug on
+  printf "%f\n" $ ln firstlastZ
+  printf "%s " $ replicate 10 ' '
+  forM_ (M.elems bitToNuc) $ \mut -> printf "%10d " mut
+  printf "\n"
+  forM_ (M.elems bitToNuc) $ \frst -> do
+    printf "%8d   " frst
+    forM_ (M.elems bitToNuc) $ \lst -> printf "%10.4f " (ln $ firstlastUn M.! (frst,lst))
+    printf "\n"
+  printf "\n"
+  printf "%f\n" $ ln firstlastZ
+  printf "%s " $ replicate 10 ' '
+  forM_ (M.elems bitToNuc) $ \mut -> printf "%10d " mut
+  printf "\n"
+  forM_ (M.elems bitToNuc) $ \frst -> do
+    printf "%8d   " frst
+    forM_ (M.elems bitToNuc) $ \lst -> printf "%10.4f " ((ln $ firstlastUn M.! (frst,lst)) - ln firstlastZ)
+    printf "\n"
+  printf "\n"
+  -- debug off
+  -- debug on
+  -- calculate first weight, unnormalized
+--  let firstUn = M.fromList [ ]
+  -- debug off
   --
   --
   -- Run edge probability Inside/Outside calculations. These take quite
