@@ -123,8 +123,8 @@ edgeProbPartFun scaled landscape =
 
 -- | Turn the edge probabilities into a score matrix.
 
-edgeProbScoreMatrix :: Landscape -> [(EdgeBoundary C, Log Double)] -> ScoreMatrix (Log Double)
-edgeProbScoreMatrix Landscape{..} xs' = ScoreMatrix m nprobs names names
+edgeProbScoreMatrix :: Landscape -> [Log Double] -> [(EdgeBoundary C, Log Double)] -> ScoreMatrix (Log Double)
+edgeProbScoreMatrix Landscape{..} begs xs' = ScoreMatrix m nprobs names names
   where m = fromAssocs l h 0 xs
         l = (Z:.0:.0)
         h = (Z:.maximum [f | (f :-> _,_) <- xs']:.maximum [t | (_ :-> t,_) <- xs'])
@@ -136,5 +136,5 @@ edgeProbScoreMatrix Landscape{..} xs' = ScoreMatrix m nprobs names names
                            $ B.lookupR mutationPositions k | k <- [0..n]
                            ]
         rowsums = HM.fromListWith (+) [ (f,p) | (f :-> t, p) <- xs' ]
-        nprobs = fromAssocs 0 hh 1 [ (f,1-p) | f <- [0..hh], let p = rowsums HM.! f ]
+        nprobs = fromAssocs 0 hh 1 $ zip [0..hh] begs -- [ (f,1-p) | f <- [0..hh], let p = rowsums HM.! f ]
 

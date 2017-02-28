@@ -29,6 +29,7 @@ module BioInf.MutationOrder
   , ScaleFunction (..)
   ) where
 
+import qualified Data.Vector.Unboxed as VU
 import           Data.Tuple (swap)
 import           Control.Monad (unless,forM_)
 import           Data.Bits
@@ -49,6 +50,7 @@ import           Control.Arrow (first,second)
 
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
 import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..), getBoundary)
+import           Data.PrimitiveArray.ScoreMatrix
 import           Diagrams.TwoD.ProbabilityGrid
 import qualified Data.Bijection.HashMap as B
 import qualified ShortestPath.SHP.Edge.MinDist as SHP
@@ -119,14 +121,21 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   let firstlastZ = Numeric.Log.sum [ bpTotal bp | (_,_,bp) <- rbps ]
   let firstlastLogP = M.map (/firstlastZ) firstlastUn
   let firstlastP = M.map (exp . ln) firstlastLogP
+  let rowMarginals = M.mapKeysWith (+) fst firstlastP
+  let colMarginals = M.mapKeysWith (+) snd firstlastP
   printf "       "
   forM_ (M.elems bitToNuc) $ \mut -> printf "%6d " mut
-  printf "\n"
+  printf "         Σ\n"
   forM_ (M.elems bitToNuc) $ \frst -> do
     printf "%4d   " frst
     forM_ (M.elems bitToNuc) $ \lst -> printf "%6.4f " (firstlastP M.! (frst,lst))
-    printf "\n"
-  printf "divergence from proper normalization: %10.8f\n" (1 - foldl (+) 0 firstlastP)
+    printf "    %6.4f\n" $ rowMarginals M.! frst
+  printf "Σ      "
+  forM_ (M.elems colMarginals) $ printf "%6.4f "
+  printf "\n"
+  printf "divergence from proper normalization: %10.8f\n" (1 - Prelude.sum firstlastP)
+  printf "row marginal sum %10.8f\n" (Prelude.sum rowMarginals)
+  printf "col marginal sum %10.8f\n" (Prelude.sum colMarginals)
   printf "\n"
   -- debug on
   printf "%f\n" $ ln firstlastZ
@@ -178,7 +187,8 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   --
   -- Generate the path with maximal edge probability
   --
-  let eprobs = edgeProbScoreMatrix ls eps
+  let eprobs = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+--  let eprobs = eprobs' { scoreNodes = VU.map (Exp . log) . VU.fromList $ M.toList rowMarginals }
   let (Exp maxprob,mpbt) = SHP.runMaxEdgeProb eprobs
   printf "Maximal Edge Log-Probability Sum: %6.4f with at least %d co-optimal paths\n" maxprob (length $ take cooptCount mpbt)
   putStrLn "first mutation to extant species\n"
