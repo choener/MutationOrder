@@ -64,6 +64,7 @@ library
                , ADPfusion              == 0.5.2.*
                , ADPfusionSet           == 0.0.0.*
                , bimaps                 == 0.1.0.*
+               , BiobaseXNA             == 0.9.3.*
                , DPutils                == 0.0.1.*
                , FormalGrammars         == 0.3.1.*
                , PrimitiveArray         == 0.8.0.*

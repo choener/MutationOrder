@@ -54,6 +54,7 @@ import           Data.PrimitiveArray.ScoreMatrix
 import           Diagrams.TwoD.ProbabilityGrid
 import qualified Data.Bijection.HashMap as B
 import qualified ShortestPath.SHP.Edge.MinDist as SHP
+import           Biobase.Secondary.Diagrams (d1Distance)
 
 import           BioInf.MutationOrder.EdgeProb
 import           BioInf.MutationOrder.MinDist
@@ -213,6 +214,14 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     putStrLn ""
   putStrLn ""
 {-# NoInline runMutationOrder #-}
+
+-- | Basepair distance
+
+basepairDistanceMFE :: ScaleFunction
+basepairDistanceMFE frna trna = fromIntegral $ d1Distance (mfeD1S frna) (mfeD1S trna)
+
+basepairDistanceCentroid :: ScaleFunction
+basepairDistanceCentroid frna trna = fromIntegral $ d1Distance (centroidD1S frna) (centroidD1S trna)
 
 -- | Scale function for normal mfe delta energies
 

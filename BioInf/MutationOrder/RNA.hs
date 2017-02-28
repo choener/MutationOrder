@@ -36,6 +36,7 @@ import           Data.Monoid
 import qualified Data.Bijection.HashMap as B
 import           BioInf.ViennaRNA.Bindings
 import qualified Data.PrimitiveArray as PA
+import           Biobase.Secondary.Diagrams (D1Secondary(..), mkD1S)
 
 
 
@@ -45,6 +46,8 @@ import qualified Data.PrimitiveArray as PA
 --
 -- TODO include the basepair probability matrix? Can we "compress" that
 -- one?
+--
+-- We do not encode D1S into the json
 
 data RNA = RNA
   { mutationSet       :: !(VU.Vector (Int,Char))
@@ -54,10 +57,14 @@ data RNA = RNA
     -- ^ store RNA sequence too, for now
   , mfeStructure      :: !ByteString
     -- ^ the mfe structure we get
+  , mfeD1S            :: !D1Secondary
+    -- ^ efficient structure encoding
   , mfeEnergy         :: !Double
     -- ^ mfe energy of the structure
   , centroidStructure :: !ByteString
     -- ^ the centroid structure
+  , centroidD1S       :: !D1Secondary
+    -- ^ efficient centroid structure encoding
   , centroidEnergy    :: !Double
   }
   deriving (Show,Eq,Generic)
@@ -93,7 +100,12 @@ instance FromJSON RNA where
     let (ce,cs) = second BS.pack . unsafePerformIO . centroidTemp 37 $ BS.unpack primarySequence
     centroidStructure <- (fmap encodeUtf8 <$> v .:? "centroidStructure") .!= cs
     centroidEnergy <- v .:? "centroidEnergy" .!= ce
+    let mfeD1S = bldD1S mfeStructure
+    let centroidD1S = bldD1S centroidStructure
     return RNA{..}
+
+bldD1S :: ByteString -> D1Secondary
+bldD1S x = mkD1S (["()"::String], BS.unpack x)
 
 -- | Given the primary sequence and the mutation set, fill the 'RNA'
 -- structure.
@@ -115,6 +127,8 @@ mkRNA inp' ms = RNA
   , mfeEnergy         = e
   , centroidStructure = cS
   , centroidEnergy    = cE
+  , mfeD1S            = bldD1S s
+  , centroidD1S       = bldD1S cS
   }
   where
     inp   = insertMutations ms inp'
