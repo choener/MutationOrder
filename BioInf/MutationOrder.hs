@@ -215,6 +215,13 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   putStrLn ""
 {-# NoInline runMutationOrder #-}
 
+posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction
+posScaled l s = scaleByFunction go where
+  go d | d >= l    = d ** s
+       | otherwise = d
+  {-# Inline go #-}
+{-# Inlinable posScaled #-}
+
 -- | Basepair distance
 
 basepairDistanceMFE :: ScaleFunction

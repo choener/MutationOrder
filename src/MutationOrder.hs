@@ -25,6 +25,7 @@ data Options = Options
   , scoretype     :: ScoreType
   , positivesquared :: Bool
   , onlypositive  :: Bool
+  , posscaled :: Maybe (Double,Double)
   }
   deriving (Show,Data,Typeable)
 
@@ -40,6 +41,7 @@ oOptions = Options
   , scoretype     = Centroid &= help "choose 'mfe', 'centroid', or 'pairdist' for the evaluation of each mutational step"
   , positivesquared = False &= help "square positive energies to penalize worse structures"
   , onlypositive  = False &= help "minimize only over penalties, not energy gains"
+  , posscaled     = Nothing
   } &= verbosity
 
 main :: IO ()
@@ -48,6 +50,7 @@ main = do
   isL <- isLoud
   let fwdScaleFunction
         = (if positivesquared then squaredPositive else id)
+        . (maybe id (uncurry posScaled) posscaled)
         . (if onlypositive then (scaleByFunction (max 0)) else id)
         $ (case scoretype of Mfe -> mfeDelta
                              Centroid -> centroidDelta
@@ -56,6 +59,7 @@ main = do
   let insideScaleFunction
         = scaleTemperature temperature
         . (if positivesquared then squaredPositive else id)
+        . (maybe id (uncurry posScaled) posscaled)
         . (if onlypositive then (scaleByFunction (max 0)) else id)
         $ (case scoretype of Mfe -> mfeDelta
                              Centroid -> centroidDelta
