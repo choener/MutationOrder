@@ -27,11 +27,12 @@ data Options
     , fillstyle     :: FillStyle
     , cooptcount    :: Int
     , cooptprint    :: Int
-    , figurenames   :: String
+    , outprefix     :: FilePath
     , scoretype     :: ScoreType
     , positivesquared :: Bool
     , onlypositive  :: Bool
     , posscaled :: Maybe (Double,Double)
+    , lkupfile :: Maybe FilePath
     }
   | GenSequences
     { infiles :: [FilePath]
@@ -46,11 +47,12 @@ oOptions = Options
   , fillstyle     = FSfull
   , cooptcount    = 100000
   , cooptprint    = 2
-  , figurenames   = "fig-"
+  , outprefix     = "tmp"
   , scoretype     = Centroid &= help "choose 'mfe', 'centroid', or 'pairdist' for the evaluation of each mutational step"
   , positivesquared = False &= help "square positive energies to penalize worse structures"
   , onlypositive  = False &= help "minimize only over penalties, not energy gains"
   , posscaled     = Nothing
+  , lkupfile = Nothing
   }
 
 oGenSequences = GenSequences
@@ -68,7 +70,7 @@ genSequences o = do
   let GenSequences{..} = o
   ancestral <- stupidReader $ infiles !! 0
   current   <- stupidReader $ infiles !! 1
-  let ls = snd $ createRNAlandscape False ancestral current
+  let ls = snd $ createRNAlandscape Nothing False ancestral current
   forM_ ls $ \(k,sq) -> BS.putStrLn sq
   return ()
 
@@ -92,5 +94,5 @@ mainProgram oOptions = do
                              Centroid -> centroidDelta
                              PairDistMfe -> basepairDistanceMFE
                              PairDistCen -> basepairDistanceCentroid)
-  runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint figurenames workdb temperature infiles
+  runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint lkupfile outprefix workdb temperature infiles
 

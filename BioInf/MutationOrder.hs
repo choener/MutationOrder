@@ -31,7 +31,7 @@ module BioInf.MutationOrder
 
 import qualified Data.Vector.Unboxed as VU
 import           Data.Tuple (swap)
-import           Control.Monad (unless,forM_)
+import           Control.Monad (unless,forM_,when)
 import           Data.Bits
 import           Data.ByteString (ByteString)
 import           Data.Function (on)
@@ -47,6 +47,8 @@ import           System.Directory (doesFileExist)
 import           System.Exit (exitFailure)
 import           Text.Printf
 import           Control.Arrow (first,second)
+import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle)
+import           System.Exit (exitSuccess)
 
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
 import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..), getBoundary)
@@ -62,157 +64,165 @@ import           BioInf.MutationOrder.RNA
 
 
 
-runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount cooptPrint fignames workdb temperature [ancestralFP,currentFP] = do
-  --
-  -- Initial stuff and debug information
-  --
-  ancestral <- stupidReader ancestralFP
-  current   <- stupidReader currentFP
-  ls <- withDumpFile workdb ancestral current . fst $ createRNAlandscape verbose ancestral current
-  let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
-  let bitToNuc = M.fromList $ map (swap . first (+1)) mpks
-  let nn = length mpks
-  print $ mutationCount ls
-  --
-  -- Run co-optimal lowest energy changes
-  --
-  let (e,bs) = runCoOptDist fwdScaleFunction ls
-  printf "Best energy gain: %10.4f\n" e
-  printf "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
-  putStrLn ""
-  forM_ (take cooptPrint bs) T.putStrLn
-  -- Run @First@ probability algorithm to determine the probability for
-  -- each mutation to be the initial one
-  {-
-  printf "Chain begin probabilities:\n"
-  let fps = boundaryPartFunFirst probScaleFunction ls
-  forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
-  printf "\n"
-  forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
-  printf "\n\n"
-  -}
-  -- Run @Last@ probability algorithm to determine the probability for
-  -- each mutation to be the last one
-  printf "Chain end probabilities:\n"
-  let fps = boundaryPartFunLast Nothing probScaleFunction ls
-  forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
-  printf "\n"
-  forM_ (bpNormalized fps) $ \(_, Exp p) -> printf "%6.4f  " (exp p)
-  printf "\n\n"
-  --
-  -- Run specialized versions of the above, restricting the first mutation
-  -- to the given one. Marginalized over the last probability, and rescaled
-  -- we get the first probability. Completely printed out, we get the joint
-  -- probability for each @i,j@ to be @first,last@ in the chain.
-  --
-  printf "Restricted chain end probabilities\n"
-  let rbps = map (\(mp,k) -> (mp,k,boundaryPartFunLast (Just k) probScaleFunction ls)) mpks
-  forM_ rbps $ \(mp,k,bp) -> do
-    printf "%5d %5d\n" (mp+1) k
-    forM_ (bpUnnormalized bp) $ \(l,Exp p) -> printf "%7d " (bitToNuc M.! getBoundary l)
+runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount cooptPrint lkupFile outprefix workdb temperature [ancestralFP,currentFP] = do
+  -- only run if out file(s) do not exist
+  dfe <- doesFileExist (outprefix ++ ".run")
+  when dfe $ do
+    printf "%s.run exists, ending now!\n" outprefix
+    exitSuccess
+  withFile (outprefix ++ ".run") WriteMode $ \oH -> do
+    printf "%s.run job started!\n" outprefix
+    --
+    -- Initial stuff and debug information
+    --
+    ancestral <- stupidReader ancestralFP
+    current   <- stupidReader currentFP
+    lkup <- case lkupFile of {Nothing -> return Nothing; Just f -> Just <$> qlines f}
+    ls <- withDumpFile oH workdb ancestral current . fst $ createRNAlandscape lkup verbose ancestral current
+    let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
+    let bitToNuc = M.fromList $ map (swap . first (+1)) mpks
+    let nn = length mpks
+    hPrintf oH "number of mutations: %d\n" $ mutationCount ls
+    --
+    -- Run co-optimal lowest energy changes
+    --
+    let (e,bs) = runCoOptDist fwdScaleFunction ls
+    hPrintf oH "Best energy gain: %10.4f\n" e
+    hPrintf oH "Number of co-optimal paths: %10d\n" (length $ take cooptCount bs)
+    hPutStrLn oH ""
+    forM_ (take cooptPrint bs) (T.hPutStrLn oH)
+    -- Run @First@ probability algorithm to determine the probability for
+    -- each mutation to be the initial one
+    {-
+    printf "Chain begin probabilities:\n"
+    let fps = boundaryPartFunFirst probScaleFunction ls
+    forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
     printf "\n"
-    forM_ (bpUnnormalized bp) $ \(l,p) -> printf "%7.2f " (exp . ln $ p / bpTotal bp)
-    printf "\n"
-  printf "\n"
-  -- collect all restricted partition function scores and prepare for
-  -- normalization
-  let firstlastUn = M.fromList [ ((mp+1,bitToNuc M.! getBoundary l), logp)
-                               | (mp,k,bp) <- rbps, (l,logp) <- bpUnnormalized bp
-                               ]
-  let firstlastZ = Numeric.Log.sum [ bpTotal bp | (_,_,bp) <- rbps ]
-  let firstlastLogP = M.map (/firstlastZ) firstlastUn
-  let firstlastP = M.map (exp . ln) firstlastLogP
-  let rowMarginals = M.mapKeysWith (+) fst firstlastP
-  let colMarginals = M.mapKeysWith (+) snd firstlastP
-  printf "       "
-  forM_ (M.elems bitToNuc) $ \mut -> printf "%6d " mut
-  printf "         Σ\n"
-  forM_ (M.elems bitToNuc) $ \frst -> do
-    printf "%4d   " frst
-    forM_ (M.elems bitToNuc) $ \lst -> printf "%6.4f " (firstlastP M.! (frst,lst))
-    printf "    %6.4f\n" $ rowMarginals M.! frst
-  printf "Σ      "
-  forM_ (M.elems colMarginals) $ printf "%6.4f "
-  printf "\n"
-  printf "divergence from proper normalization: %10.8f\n" (1 - Prelude.sum firstlastP)
-  printf "row marginal sum %10.8f\n" (Prelude.sum rowMarginals)
-  printf "col marginal sum %10.8f\n" (Prelude.sum colMarginals)
-  printf "\n"
-  -- debug on
-  printf "%f\n" $ ln firstlastZ
-  printf "%s " $ replicate 10 ' '
-  forM_ (M.elems bitToNuc) $ \mut -> printf "%10d " mut
-  printf "\n"
-  forM_ (M.elems bitToNuc) $ \frst -> do
-    printf "%8d   " frst
-    forM_ (M.elems bitToNuc) $ \lst -> printf "%10.4f " (ln $ firstlastUn M.! (frst,lst))
-    printf "\n"
-  printf "\n"
-  printf "%f\n" $ ln firstlastZ
-  printf "%s " $ replicate 10 ' '
-  forM_ (M.elems bitToNuc) $ \mut -> printf "%10d " mut
-  printf "\n"
-  forM_ (M.elems bitToNuc) $ \frst -> do
-    printf "%8d   " frst
-    forM_ (M.elems bitToNuc) $ \lst -> printf "%10.4f " ((ln $ firstlastUn M.! (frst,lst)) - ln firstlastZ)
-    printf "\n"
-  printf "\n"
-  -- debug off
-  -- debug on
-  -- calculate first weight, unnormalized
---  let firstUn = M.fromList [ ]
-  -- debug off
-  --
-  --
-  -- Run edge probability Inside/Outside calculations. These take quite
-  -- a while longer.
-  --
-  let (ibs,eps) = edgeProbPartFun probScaleFunction ls
-  putStr "       "
-  forM_ mpks $ \(mp,k) -> printf " %6d" k
-  putStrLn ""
-  putStr "       "
-  forM_ mpks $ \(mp,k) -> printf " %6d" (mp+1)
-  putStrLn ""
-  forM_ (zip (groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps) mpks) $ \(rps,(mp,k)) -> do
-    let (eb,_) = head rps
-    printf "%3d %3d" k (mp+1)
-    forM_ rps $ \(eb,Exp p) -> printf (" %6.4f") (exp p)
-    printf "   %6.4f" (Prelude.sum $ map (exp . ln . snd) rps)
-    printf "\n"
-  let colSums = M.fromListWith (+) [ (c,p) | ((_ :-> c),p) <- eps ]
-  putStr "    Σ  "
-  forM_ (M.toList colSums) $ \(c,Exp p) -> printf (" %6.4f") (exp p)
-  putStrLn "\n"
-  gridFile [SVG,EPS] (fignames ++ "-edge") fw fs nn nn (map (show . (+1) . fst) mpks) (map (show . (+1) . fst) mpks) (map snd eps)
-  --
-  -- Generate the path with maximal edge probability
-  --
-  let eprobs = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
---  let eprobs = eprobs' { scoreNodes = VU.map (Exp . log) . VU.fromList $ M.toList rowMarginals }
-  let (Exp maxprob,mpbt) = SHP.runMaxEdgeProb eprobs
-  printf "Maximal Edge Log-Probability Sum: %6.4f with at least %d co-optimal paths\n" maxprob (length $ take cooptCount mpbt)
-  putStrLn "first mutation to extant species\n"
-  forM_ (take cooptPrint mpbt) $ \bt -> do
-    let extractMut (SHP.BTnode (_:.To n)) = n
-        extractMut (SHP.BTedge (From ff:.To tt)) = ff
-    let mutationOrder = tail $ scanl (\set mut -> set `setBit` extractMut mut) zeroBits (reverse bt)
-    let prettyPrint mut k = do
-          let rna = rnas ls HM.! mut
-          printf "   %3s  %s\n        %s   MFE %6.4f\n        %s   CNT %6.4f\n"
-                  (maybe "anc" (show . (+1) . fst . (!!) mpks) k)
-                  (BS.unpack $ primarySequence rna)
-                  (BS.unpack $ mfeStructure rna)
-                  (mfeEnergy rna)
-                  (BS.unpack $ centroidStructure rna)
-                  (centroidEnergy rna)
-          putStrLn $ replicate 8 ' ' ++ (take (BS.length $ primarySequence rna) . concat $ zipWith (\xs x -> xs ++ show x) (repeat $ "    .    ") (drop 1 $ cycle [0..9]))
-    prettyPrint zeroBits Nothing
-    forM_ (zip (reverse bt) mutationOrder) $ \case
-      (SHP.BTnode (_:.To n),mut) -> prettyPrint mut (Just n)
-      (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just ff)
-    putStrLn ""
-  putStrLn ""
+    forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
+    printf "\n\n"
+    -}
+    -- Run @Last@ probability algorithm to determine the probability for
+    -- each mutation to be the last one
+    hPrintf oH "Chain end probabilities:\n"
+    let fps = boundaryPartFunLast Nothing probScaleFunction ls
+    forM_ mpks $ \(mp,k) -> hPrintf oH "%6d  " (mp+1)
+    hPrintf oH "\n"
+    forM_ (bpNormalized fps) $ \(_, Exp p) -> hPrintf oH "%6.4f  " (exp p)
+    hPrintf oH "\n\n"
+    --
+    -- Run specialized versions of the above, restricting the first mutation
+    -- to the given one. Marginalized over the last probability, and rescaled
+    -- we get the first probability. Completely printed out, we get the joint
+    -- probability for each @i,j@ to be @first,last@ in the chain.
+    --
+    hPrintf oH "Restricted chain end probabilities\n"
+    let rbps = map (\(mp,k) -> (mp,k,boundaryPartFunLast (Just k) probScaleFunction ls)) mpks
+    forM_ rbps $ \(mp,k,bp) -> do
+      hPrintf oH "%5d %5d\n" (mp+1) k
+      forM_ (bpUnnormalized bp) $ \(l,Exp p) -> hPrintf oH "%7d " (bitToNuc M.! getBoundary l)
+      hPrintf oH "\n"
+      forM_ (bpUnnormalized bp) $ \(l,p) -> hPrintf oH "%7.2f " (exp . ln $ p / bpTotal bp)
+      hPrintf oH "\n"
+    hPrintf oH "\n"
+    -- collect all restricted partition function scores and prepare for
+    -- normalization
+    let firstlastUn = M.fromList [ ((mp+1,bitToNuc M.! getBoundary l), logp)
+                                 | (mp,k,bp) <- rbps, (l,logp) <- bpUnnormalized bp
+                                 ]
+    let firstlastZ = Numeric.Log.sum [ bpTotal bp | (_,_,bp) <- rbps ]
+    let firstlastLogP = M.map (/firstlastZ) firstlastUn
+    let firstlastP = M.map (exp . ln) firstlastLogP
+    let rowMarginals = M.mapKeysWith (+) fst firstlastP
+    let colMarginals = M.mapKeysWith (+) snd firstlastP
+    hPrintf oH "       "
+    forM_ (M.elems bitToNuc) $ \mut -> hPrintf oH "%6d " mut
+    hPrintf oH "         Σ\n"
+    forM_ (M.elems bitToNuc) $ \frst -> do
+      hPrintf oH "%4d   " frst
+      forM_ (M.elems bitToNuc) $ \lst -> hPrintf oH "%6.4f " (firstlastP M.! (frst,lst))
+      hPrintf oH "    %6.4f\n" $ rowMarginals M.! frst
+    hPrintf oH "Σ      "
+    forM_ (M.elems colMarginals) $ hPrintf oH "%6.4f "
+    hPrintf oH "\n"
+    hPrintf oH "divergence from proper normalization: %10.8f\n" (1 - Prelude.sum firstlastP)
+    hPrintf oH "row marginal sum %10.8f\n" (Prelude.sum rowMarginals)
+    hPrintf oH "col marginal sum %10.8f\n" (Prelude.sum colMarginals)
+    hPrintf oH "\n"
+    -- debug on
+    hPrintf oH "%f\n" $ ln firstlastZ
+    hPrintf oH "%s " $ replicate 10 ' '
+    forM_ (M.elems bitToNuc) $ \mut -> hPrintf oH "%10d " mut
+    hPrintf oH "\n"
+    forM_ (M.elems bitToNuc) $ \frst -> do
+      hPrintf oH "%8d   " frst
+      forM_ (M.elems bitToNuc) $ \lst -> hPrintf oH "%10.4f " (ln $ firstlastUn M.! (frst,lst))
+      hPrintf oH "\n"
+    hPrintf oH "\n"
+    hPrintf oH "%f\n" $ ln firstlastZ
+    hPrintf oH "%s " $ replicate 10 ' '
+    forM_ (M.elems bitToNuc) $ \mut -> hPrintf oH "%10d " mut
+    hPrintf oH "\n"
+    forM_ (M.elems bitToNuc) $ \frst -> do
+      hPrintf oH "%8d   " frst
+      forM_ (M.elems bitToNuc) $ \lst -> hPrintf oH "%10.4f " ((ln $ firstlastUn M.! (frst,lst)) - ln firstlastZ)
+      hPrintf oH "\n"
+    hPrintf oH "\n"
+    -- debug off
+    -- debug on
+    -- calculate first weight, unnormalized
+  --  let firstUn = M.fromList [ ]
+    -- debug off
+    --
+    --
+    -- Run edge probability Inside/Outside calculations. These take quite
+    -- a while longer.
+    --
+    let (ibs,eps) = edgeProbPartFun probScaleFunction ls
+    hPrintf oH "       "
+    forM_ mpks $ \(mp,k) -> hPrintf oH " %6d" k
+    hPutStrLn oH ""
+    hPrintf oH "       "
+    forM_ mpks $ \(mp,k) -> hPrintf oH " %6d" (mp+1)
+    hPutStrLn oH ""
+    forM_ (zip (groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps) mpks) $ \(rps,(mp,k)) -> do
+      let (eb,_) = head rps
+      hPrintf oH "%3d %3d" k (mp+1)
+      forM_ rps $ \(eb,Exp p) -> hPrintf oH (" %6.4f") (exp p)
+      hPrintf oH "   %6.4f" (Prelude.sum $ map (exp . ln . snd) rps)
+      hPrintf oH "\n"
+    let colSums = M.fromListWith (+) [ (c,p) | ((_ :-> c),p) <- eps ]
+    hPrintf oH "    Σ  "
+    forM_ (M.toList colSums) $ \(c,Exp p) -> hPrintf oH (" %6.4f") (exp p)
+    hPutStrLn oH "\n"
+    gridFile [SVG,EPS] (outprefix ++ "-edge") fw fs nn nn (map (show . (+1) . fst) mpks) (map (show . (+1) . fst) mpks) (map snd eps)
+    --
+    -- Generate the path with maximal edge probability
+    --
+    let eprobs = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+  --  let eprobs = eprobs' { scoreNodes = VU.map (Exp . log) . VU.fromList $ M.toList rowMarginals }
+    let (Exp maxprob,mpbt) = SHP.runMaxEdgeProb eprobs
+    hPrintf oH "Maximal Edge Log-Probability Sum: %6.4f with at least %d co-optimal paths\n" maxprob (length $ take cooptCount mpbt)
+    hPutStrLn oH "first mutation to extant species\n"
+    forM_ (take cooptPrint mpbt) $ \bt -> do
+      let extractMut (SHP.BTnode (_:.To n)) = n
+          extractMut (SHP.BTedge (From ff:.To tt)) = ff
+      let mutationOrder = tail $ scanl (\set mut -> set `setBit` extractMut mut) zeroBits (reverse bt)
+      let prettyPrint mut k = do
+            let rna = rnas ls HM.! mut
+            hPrintf oH "   %3s  %s\n        %s   MFE %6.4f\n        %s   CNT %6.4f\n"
+                    (maybe "anc" (show . (+1) . fst . (!!) mpks) k)
+                    (BS.unpack $ primarySequence rna)
+                    (BS.unpack $ mfeStructure rna)
+                    (mfeEnergy rna)
+                    (BS.unpack $ centroidStructure rna)
+                    (centroidEnergy rna)
+            hPutStrLn oH $ replicate 8 ' ' ++ (take (BS.length $ primarySequence rna) . concat $ zipWith (\xs x -> xs ++ show x) (repeat $ "    .    ") (drop 1 $ cycle [0..9]))
+      prettyPrint zeroBits Nothing
+      forM_ (zip (reverse bt) mutationOrder) $ \case
+        (SHP.BTnode (_:.To n),mut) -> prettyPrint mut (Just n)
+        (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just ff)
+      hPutStrLn oH ""
+    hPutStrLn oH ""
 {-# NoInline runMutationOrder #-}
 
 posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction
@@ -280,7 +290,8 @@ stupidReader fp = do
 -- @Landscape@.
 
 withDumpFile
-  :: FilePath
+  :: Handle
+  -> FilePath
   -- ^ The path we store the serialized and compressed dump in
   -> ByteString
   -- ^ ancestral / origin sequence
@@ -291,22 +302,22 @@ withDumpFile
   -- the data in the dump
   -> IO Landscape
   -- ^ the data we put in, but maybe taken from the dump file
-withDumpFile fp ancestral current l = do
+withDumpFile oH fp ancestral current l = do
   dfe <- doesFileExist fp
   if dfe then do
-    printf "using database %s to load sequence information\n" fp
+    hPrintf oH "using database %s to load sequence information\n" fp
     ls <- fromFileJSON fp
     -- now we check if we have a sane DB file
     unless (landscapeOrigin ls == ancestral && landscapeDestination ls == current) $ do
-      putStrLn "ancestral or target sequence do not match those stored in the work database"
-      putStrLn $ "given ancestral: " ++ BS.unpack ancestral
-      putStrLn $ "DB    ancestral: " ++ (BS.unpack $ landscapeOrigin ls)
-      putStrLn $ "given current:   " ++ BS.unpack current
-      putStrLn $ "DB    current:   " ++ (BS.unpack $ landscapeDestination ls)
+      hPutStrLn oH "ancestral or target sequence do not match those stored in the work database"
+      hPutStrLn oH $ "given ancestral: " ++ BS.unpack ancestral
+      hPutStrLn oH $ "DB    ancestral: " ++ (BS.unpack $ landscapeOrigin ls)
+      hPutStrLn oH $ "given current:   " ++ BS.unpack current
+      hPutStrLn oH $ "DB    current:   " ++ (BS.unpack $ landscapeDestination ls)
       exitFailure
     return ls
   else do
-    printf "database %s does not exist! Folding all intermediate structures. This may take a while!\n" fp
+    hPrintf oH "database %s does not exist! Folding all intermediate structures. This may take a while!\n" fp
     toFileJSON fp l
     return l
 

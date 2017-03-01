@@ -33,6 +33,7 @@ import           Data.Serialize.Instances
 import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import           Data.Monoid
 import           Data.Char (isDigit)
+import           Data.Tuple (swap)
 
 import qualified Data.Bijection.HashMap as B
 import           BioInf.ViennaRNA.Bindings
@@ -116,25 +117,32 @@ bldD1S x = mkD1S (["()"::String], BS.unpack x)
 -- TODO check if these calls are *really* thread-safe!
 
 mkRNA
-  :: ByteString
+  :: Maybe (HM.HashMap ByteString QLine)
+  -> ByteString
   -- ^ primary sequence of the *origin* RNA
   -> VU.Vector (Int,Char)
   -- ^ set of mutations compared to the origin
   -> RNA
-mkRNA inp' ms = RNA
+mkRNA lkup inp' ms = RNA
   { mutationSet       = ms
   , primarySequence   = inp
-  , mfeStructure      = s
-  , mfeEnergy         = e
+  , mfeStructure      = mS
+  , mfeEnergy         = mE
   , centroidStructure = cS
   , centroidEnergy    = cE
-  , mfeD1S            = bldD1S s
+  , mfeD1S            = bldD1S mS
   , centroidD1S       = bldD1S cS
   }
   where
     inp   = insertMutations ms inp'
-    (e,s) = second BS.pack . unsafePerformIO . mfeTemp 37 $ BS.unpack inp
-    (cE,cS) = second BS.pack . unsafePerformIO . centroidTemp 37 $ BS.unpack inp
+    ((mE,mS),(cE,cS)) = maybe calculateHere lookup lkup
+    calculateHere = ( second BS.pack . unsafePerformIO . mfeTemp 37 $ BS.unpack inp
+                    , second BS.pack . unsafePerformIO . centroidTemp 37 $ BS.unpack inp
+                    )
+    lookup lkup =
+      case HM.lookup inp lkup of
+        Nothing -> traceShow "WARNING! have RNA lookup table but have to calculate!" calculateHere
+        Just QLine{..} -> (swap qlmfe,swap qlcentroid)
 
 -- | Insert a set of mutations in a @ByteString@.
 
@@ -192,8 +200,8 @@ instance FromJSON Landscape where
 -- does not allow parallel runs! It would be possible to consider
 -- externalizing this, but for now we just run single-threaded.
 
-createRNAlandscape :: Bool -> ByteString -> ByteString -> (Landscape, [(Int,ByteString)])
-createRNAlandscape verbose origin mutation = (ls, zipWith (\mm k -> (k,insertMutations mm origin)) mus [0..])
+createRNAlandscape :: Maybe (HM.HashMap ByteString QLine) -> Bool -> ByteString -> ByteString -> (Landscape, [(Int,ByteString)])
+createRNAlandscape lkup verbose origin mutation = (ls, zipWith (\mm k -> (k,insertMutations mm origin)) mus [0..])
   where
     ls = Landscape
           { rnas                  = rs -- `using` (parVector chunkSize)
@@ -203,7 +211,7 @@ createRNAlandscape verbose origin mutation = (ls, zipWith (\mm k -> (k,insertMut
           , mutationPositions     = mutbit
           }
     rs  = HM.fromList . map pairWithBitSet $ zipWith talk mus [0..]
-    talk s c = (if (c `mod` 1000 == 0 && verbose) then traceShow c else id) mkRNA origin s
+    talk s c = (if (c `mod` 1000 == 0 && verbose) then traceShow c else id) mkRNA lkup origin s
     mus = map (VU.fromList . catMaybes)
         . sequence
         $ pms
@@ -255,9 +263,11 @@ data QLine = QLine
   }
   deriving (Show)
 
+
+
 qlines f = do
   ls <- BS.lines <$> BS.readFile f
-  return $ go ls
+  return $ qlhm $ go ls
   where go [] = []
         go ls = let (hs,ts) = splitAt 5 ls
                 in  parseql hs : go ts
@@ -269,3 +279,4 @@ qlines f = do
         stupid bs = let (h:ts) = BS.words bs
                         r = BS.dropWhile (\c -> not $ isDigit c || c=='-') $ BS.unwords ts
                     in (h, read $ BS.unpack $ BS.takeWhile (\c -> isDigit c || c =='-' || c=='.') r)
+        qlhm xs = HM.fromList $ map (\q -> (qlSequence q, q)) xs
