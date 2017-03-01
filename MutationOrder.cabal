@@ -106,6 +106,7 @@ library
 
 executable MutationOrder
   build-depends: base
+               , bytestring
                , cmdargs      >= 0.10
                , filepath
                --

@@ -1,10 +1,15 @@
 
+{-# Options_GHC -fno-cse #-}
+
 module Main where
 
 import System.Console.CmdArgs
 import System.FilePath
+import qualified Data.ByteString.Char8 as BS
+import Control.Monad
 
 import BioInf.MutationOrder
+import BioInf.MutationOrder.RNA (createRNAlandscape)
 
 data ScoreType
   = Mfe
@@ -13,20 +18,24 @@ data ScoreType
   | PairDistCen
   deriving (Show,Data,Typeable)
 
-data Options = Options
-  { infiles       :: [FilePath]
-  , workdb        :: FilePath
-  , temperature   :: Double
-  , fillweight    :: FillWeight
-  , fillstyle     :: FillStyle
-  , cooptcount    :: Int
-  , cooptprint    :: Int
-  , figurenames   :: String
-  , scoretype     :: ScoreType
-  , positivesquared :: Bool
-  , onlypositive  :: Bool
-  , posscaled :: Maybe (Double,Double)
-  }
+data Options
+  = Options
+    { infiles       :: [FilePath]
+    , workdb        :: FilePath
+    , temperature   :: Double
+    , fillweight    :: FillWeight
+    , fillstyle     :: FillStyle
+    , cooptcount    :: Int
+    , cooptprint    :: Int
+    , figurenames   :: String
+    , scoretype     :: ScoreType
+    , positivesquared :: Bool
+    , onlypositive  :: Bool
+    , posscaled :: Maybe (Double,Double)
+    }
+  | GenSequences
+    { infiles :: [FilePath]
+    }
   deriving (Show,Data,Typeable)
 
 oOptions = Options
@@ -42,11 +51,29 @@ oOptions = Options
   , positivesquared = False &= help "square positive energies to penalize worse structures"
   , onlypositive  = False &= help "minimize only over penalties, not energy gains"
   , posscaled     = Nothing
-  } &= verbosity
+  }
+
+oGenSequences = GenSequences
+  { infiles = def &= args
+  }
 
 main :: IO ()
 main = do
-  Options{..} <- cmdArgs oOptions
+  o <- cmdArgs $ modes [oOptions, oGenSequences] &= verbosity
+  case o of
+    Options{} -> mainProgram o
+    GenSequences{} -> genSequences o
+
+genSequences o = do
+  let GenSequences{..} = o
+  ancestral <- stupidReader $ infiles !! 0
+  current   <- stupidReader $ infiles !! 1
+  let ls = snd $ createRNAlandscape False ancestral current
+  forM_ ls $ \(k,sq) -> BS.putStrLn sq
+  return ()
+
+mainProgram oOptions = do
+  let Options{..} = oOptions
   isL <- isLoud
   let fwdScaleFunction
         = (if positivesquared then squaredPositive else id)

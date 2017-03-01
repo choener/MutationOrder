@@ -32,6 +32,7 @@ import qualified Data.HashMap.Strict as HM
 import           Data.Serialize.Instances
 import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
 import           Data.Monoid
+import           Data.Char (isDigit)
 
 import qualified Data.Bijection.HashMap as B
 import           BioInf.ViennaRNA.Bindings
@@ -191,15 +192,16 @@ instance FromJSON Landscape where
 -- does not allow parallel runs! It would be possible to consider
 -- externalizing this, but for now we just run single-threaded.
 
-createRNAlandscape :: Bool -> ByteString -> ByteString -> Landscape
-createRNAlandscape verbose origin mutation = Landscape
-  { rnas                  = rs -- `using` (parVector chunkSize)
-  , mutationCount         = length . filter (>1) . map length $ pms
-  , landscapeOrigin       = origin
-  , landscapeDestination  = mutation
-  , mutationPositions     = mutbit
-  }
+createRNAlandscape :: Bool -> ByteString -> ByteString -> (Landscape, [(Int,ByteString)])
+createRNAlandscape verbose origin mutation = (ls, zipWith (\mm k -> (k,insertMutations mm origin)) mus [0..])
   where
+    ls = Landscape
+          { rnas                  = rs -- `using` (parVector chunkSize)
+          , mutationCount         = length . filter (>1) . map length $ pms
+          , landscapeOrigin       = origin
+          , landscapeDestination  = mutation
+          , mutationPositions     = mutbit
+          }
     rs  = HM.fromList . map pairWithBitSet $ zipWith talk mus [0..]
     talk s c = (if (c `mod` 1000 == 0 && verbose) then traceShow c else id) mkRNA origin s
     mus = map (VU.fromList . catMaybes)
@@ -242,3 +244,28 @@ fromFileJSON fp = (DA.eitherDecode' . decompress) <$> BSL.readFile fp >>= \case
   Left err -> error $ "BioInf.MutationOrder.RNA.fromFile: " ++ err
   Right ls -> return ls
 
+
+-- stupid parsing for quintuple rnafold lines
+
+data QLine = QLine
+  { qlSequence  :: ByteString
+  , qlmfe       :: (ByteString,Double)
+  , qlensemble  :: (ByteString,Double)
+  , qlcentroid  :: (ByteString,Double)
+  }
+  deriving (Show)
+
+qlines f = do
+  ls <- BS.lines <$> BS.readFile f
+  return $ go ls
+  where go [] = []
+        go ls = let (hs,ts) = splitAt 5 ls
+                in  parseql hs : go ts
+        parseql [s,m,e,c,_] =
+              QLine s
+                    (stupid m)
+                    (stupid e)
+                    (stupid c)
+        stupid bs = let (h:ts) = BS.words bs
+                        r = BS.dropWhile (\c -> not $ isDigit c || c=='-') $ BS.unwords ts
+                    in (h, read $ BS.unpack $ BS.takeWhile (\c -> isDigit c || c =='-' || c=='.') r)

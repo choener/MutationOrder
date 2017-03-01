@@ -68,7 +68,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
   --
   ancestral <- stupidReader ancestralFP
   current   <- stupidReader currentFP
-  ls <- withDumpFile workdb ancestral current $ createRNAlandscape verbose ancestral current
+  ls <- withDumpFile workdb ancestral current . fst $ createRNAlandscape verbose ancestral current
   let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
   let bitToNuc = M.fromList $ map (swap . first (+1)) mpks
   let nn = length mpks
