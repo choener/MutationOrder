@@ -141,7 +141,7 @@ mkRNA lkup inp' ms = RNA
                     )
     lookup lkup =
       case HM.lookup inp lkup of
-        Nothing -> traceShow "WARNING! have RNA lookup table but have to calculate!" calculateHere
+        Nothing -> traceShow ("WARNING! have RNA lookup table but have to calculate!", inp) calculateHere
         Just QLine{..} -> (swap qlmfe,swap qlcentroid)
 
 -- | Insert a set of mutations in a @ByteString@.
