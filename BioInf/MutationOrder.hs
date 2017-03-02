@@ -87,11 +87,12 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -- Run co-optimal lowest energy changes
     --
     let (e,bs) = runCoOptDist fwdScaleFunction ls
+    let (ecount,countcount) = runCount fwdScaleFunction ls
     -- split co-optimals into "want to print" and "want to count";
     -- @countbs@ should be possible to stream
     let (printbs,countbs) = splitAt cooptPrint bs
     hPrintf oH "Best energy gain: %10.4f\n" e
-    hPrintf oH "Number of co-optimal paths: %10d\n" ((length printbs) + (length $ take (cooptCount-cooptPrint) bs))
+    hPrintf oH "Number of co-optimal paths: %10d\n" countcount -- ((length printbs) + (length $ take (cooptCount-cooptPrint) bs))
     hPutStrLn oH ""
     forM_ printbs (T.hPutStrLn oH)
     -- Run @First@ probability algorithm to determine the probability for

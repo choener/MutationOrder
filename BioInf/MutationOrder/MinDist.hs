@@ -26,6 +26,7 @@ import qualified Data.Vector.Fusion.Stream.Monadic as SM
 import           Text.Printf
 import qualified Data.Vector.Unboxed as VU
 import           Data.Maybe (fromJust)
+import qualified Data.Map.Strict as MS
 
 import qualified Data.Bijection.HashMap as B
 import           ADP.Fusion.Core
@@ -65,6 +66,29 @@ aMinDist scaled Landscape{..} = SigMinDist
   , h    = SM.foldl' min 999999
   }
 {-# Inline aMinDist #-}
+
+-- | Fused co-optimal counter!
+--
+-- TODO for now, @Int@ is assumed to be big enough...
+
+aMinDistCount :: Monad m => ScaleFunction -> Landscape -> SigMinDist m (Double,Int) (Double,Int) (Int:.From:.To) (Int:.To)
+aMinDistCount scaled Landscape{..} = SigMinDist
+  { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
+                                          trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
+                                      in  -- traceShow (BitSet fset, BitSet fset `setBit` f `setBit` t) $
+                                          -- x + scaleFunction scaled (centroidEnergy trna - centroidEnergy frna)
+                                          (fst x + scaled frna trna, snd x)
+  , mpty = \() -> (0,1)
+  , node = \(nset:.To n) ->
+      let frna = rnas HM.! (BitSet 0)
+          trna = rnas HM.! (BitSet 0 `setBit` n)
+      in  -- scaleFunction scaled $ centroidEnergy trna - centroidEnergy frna
+          (scaled frna trna,1)
+  , fini = id
+  , h    = \xs -> do cntr <- SM.foldl' (\m (k,c) -> MS.insertWith (+) k c m) MS.empty xs
+                     traceShow cntr . return $ maybe (999999,0) fst $ MS.minViewWithKey cntr
+  }
+{-# Inline aMinDistCount #-}
 
 -- | Sum over all states and collapse into boundary unscaled weights.
 
@@ -188,6 +212,18 @@ backtrackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
                         :: Z:.BT1L Double Text:.BTU Double Text
 {-# NoInline backtrackMinDist1 #-}
 
+-- | Count the number of co-optimals
+
+minDistCount :: ScaleFunction -> Landscape -> Z:.TS1L (Double,Int):.U (Double,Int)
+minDistCount scaleFunction landscape =
+  let n = mutationCount landscape
+  in  mutateTablesST $ gMinDist (aMinDistCount scaleFunction landscape)
+        (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (999999,0) []))
+        (ITbl 1 0 EmptyOk (fromAssocs Unit         Unit                           (999999,0) []))
+        EdgeWithSet
+        Singleton
+{-# NoInline minDistCount #-}
+
 countBackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1L Double:.U Double -> [Integer]
 countBackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
   where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aCount landscape)
@@ -210,10 +246,9 @@ runCoOptDist scaleFunction landscape = (unId $ axiom fwdu,bs)
         bs = backtrackMinDist1 scaleFunction landscape (Z:.fwd1:.fwdu)
 {-# NoInline runCoOptDist #-}
 
-runCount :: ScaleFunction -> Landscape -> (Double,[Integer])
-runCount scaleFunction landscape = (unId $ axiom fwdu,bs)
-  where !(Z:.fwd1:.fwdu) = forwardMinDist1 scaleFunction landscape
-        bs = countBackMinDist1 scaleFunction landscape (Z:.fwd1:.fwdu)
+runCount :: ScaleFunction -> Landscape -> (Double,Int)
+runCount scaleFunction landscape = (unId $ axiom fwdu)
+  where !(Z:.fwd1:.fwdu) = minDistCount scaleFunction landscape
 {-# NoInline runCount #-}
 
 -- | Extract the individual partition scores.
