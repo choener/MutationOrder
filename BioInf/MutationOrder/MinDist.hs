@@ -75,7 +75,7 @@ aMinDistCount :: Monad m => ScaleFunction -> Landscape -> SigMinDist m (Double,I
 aMinDistCount scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
-                                      in  -- traceShow (BitSet fset, BitSet fset `setBit` f `setBit` t) $
+                                      in  -- traceShow (BitSet fset, BitSet fset `setBit` f `setBit` t, f,t, fst x, scaled frna trna) $
                                           -- x + scaleFunction scaled (centroidEnergy trna - centroidEnergy frna)
                                           (fst x + scaled frna trna, snd x)
   , mpty = \() -> (0,1)
@@ -86,7 +86,8 @@ aMinDistCount scaled Landscape{..} = SigMinDist
           (scaled frna trna,1)
   , fini = id
   , h    = \xs -> do cntr <- SM.foldl' (\m (k,c) -> MS.insertWith (+) k c m) MS.empty xs
-                     traceShow cntr . return $ maybe (999999,0) fst $ MS.minViewWithKey cntr
+                     -- traceShow cntr .
+                     return $ maybe (999999,0) fst $ MS.minViewWithKey cntr
   }
 {-# Inline aMinDistCount #-}
 
