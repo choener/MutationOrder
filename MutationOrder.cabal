@@ -19,8 +19,11 @@ description:
                 .
                 Developed to analyse the @HAR 1@ region.
                 .
-                Details can be found in the following paper:
-                .
+                As long as the two input RNAs are small enough enough (couple
+                hundred nucleotides) and the number of mutations is small
+                enough (around 20-26, since the algorithm is exponential in
+                this number) the algorithm should work for similar problems
+                without changes.
 
 
 
