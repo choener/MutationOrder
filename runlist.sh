@@ -12,7 +12,7 @@ ST="mfe centroid pairdistmfe pairdistcen"
 OP="false true"
 
 # different temperatures to run on
-T="1.0 0.9 0.8 0.5 0.1"
+T="10.0 5.0 1.0 0.9 0.8 0.5 0.1"
 
 # positive values scaled
 PS="1,2"
