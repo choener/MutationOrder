@@ -1,13 +1,13 @@
 packages: .
           ../Lib-ADPfusion
           ../Lib-ADPfusionSet
-          ../Lib-bimaps
+--          ../Lib-bimaps
           ../Lib-BiobaseXNA
-          ../Lib-DPutils
+--          ../Lib-DPutils
           ../Lib-FormalGrammars
-          ../Lib-OrderedBits
-          ../Lib-PrimitiveArray
-          ../Lib-PrimitiveArray-Pretty
+--          ../Lib-OrderedBits
+--          ../Lib-PrimitiveArray
+--          ../Lib-PrimitiveArray-Pretty
           ../Lib-ShortestPathProblems
-          ../Lib-ViennaRNA-bindings
+--          ../Lib-ViennaRNA-bindings
 
