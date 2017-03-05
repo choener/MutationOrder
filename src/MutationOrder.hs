@@ -31,6 +31,7 @@ data Options
     , scoretype     :: ScoreType
     , positivesquared :: Bool
     , onlypositive  :: Bool
+    , equalStart    :: Bool
     , posscaled :: Maybe (Double,Double)
     , lkupfile :: Maybe FilePath
     }
@@ -51,6 +52,7 @@ oOptions = Options
   , scoretype     = Centroid &= help "choose 'mfe', 'centroid', 'pairdistmfe', or 'pairdistcen' for the evaluation of each mutational step"
   , positivesquared = False &= help "square positive energies to penalize worse structures"
   , onlypositive  = False &= help "minimize only over penalties, not energy gains"
+  , equalStart    = False
   , posscaled     = Nothing
   , lkupfile = Nothing
   }
@@ -94,5 +96,5 @@ mainProgram oOptions = do
                              Centroid -> centroidDelta
                              PairDistMfe -> basepairDistanceMFE
                              PairDistCen -> basepairDistanceCentroid)
-  runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint lkupfile outprefix workdb temperature infiles
+  runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint lkupfile outprefix workdb temperature equalStart infiles
 

@@ -65,7 +65,7 @@ import           BioInf.MutationOrder.RNA
 
 
 
-runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount cooptPrint lkupFile outprefix workdb temperature [ancestralFP,currentFP] = do
+runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount cooptPrint lkupFile outprefix workdb temperature equalStart [ancestralFP,currentFP] = do
   -- only run if out file(s) do not exist
   dfe <- doesFileExist (outprefix ++ ".run")
   when dfe $ do
@@ -252,7 +252,10 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -}
     -- the rowMarginals hold the probabily to begin with a mutation. Since
     -- @Last@ goes from first to last mutation, this is what we need.
-    let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+    let eplStartWeight = if equalStart
+          then Prelude.map (const 1) $ M.elems rowMarginals
+          else Prelude.map (Exp . log) $ M.elems rowMarginals
+    let eprobsLast = edgeProbScoreMatrix ls eplStartWeight eps
     --print eprobsLast
     --print $ PA.assocs $ scoreMatrix eprobsLast
     let (Exp maxprobLast,lastLogProbs,mpbtLast') = SHP.runMaxEdgeProbLast eprobsLast
