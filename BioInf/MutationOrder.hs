@@ -260,6 +260,11 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     --print maxprobLast
     --print lastLogProbs
     --mapM_ print $ mpbtLast
+    hPrintf oH "Fraction of optimal choice for each final mutation:\n"
+    forM_ lastLogProbs $ \(PA.Boundary b, _) -> hPrintf oH "  %6d" $ bitToNuc M.! b
+    hPrintf oH "\n"
+    forM_ lastLogProbs $ \(_, p) -> hPrintf oH "  %6.4f" $ exp $ ln (p / Exp maxprobLast)
+    hPrintf oH "\n\n"
     hPrintf oH "Maximal edge log-probability sum: %6.4f (P = %10.8f) with at least %d co-optimal paths\n" maxprobLast (exp maxprobLast) (length $ take cooptCount mpbtLast)
     hPutStrLn oH "(first mutation to extant species)\n"
     forM_ (take cooptPrint mpbtLast) $ \bt -> do
