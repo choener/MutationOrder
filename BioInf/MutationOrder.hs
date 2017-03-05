@@ -95,24 +95,28 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     hPrintf oH "Number of co-optimal paths: %10d\n" countcount -- ((length printbs) + (length $ take (cooptCount-cooptPrint) bs))
     hPutStrLn oH ""
     forM_ printbs (T.hPutStrLn oH)
+    --
     -- Run @First@ probability algorithm to determine the probability for
     -- each mutation to be the initial one
-    {-
-    printf "Chain begin probabilities:\n"
-    let fps = boundaryPartFunFirst probScaleFunction ls
-    forM_ mpks $ \(mp,k) -> printf "%6d  " (mp+1)
+    --
+    hPrintf oH "Chain begin probabilities:\n"
+    let fps = boundaryPartFunFirst Nothing probScaleFunction ls
+    forM_ mpks $ \(mp,k) -> hPrintf oH "  %6d" (mp+1)
+    hPrintf oH "\n"
+    forM_ fps $ \(_, Exp p) -> hPrintf oH "  %6.4f" (exp p)
+    hPrintf oH "\n\n"
     printf "\n"
-    forM_ fps $ \(_, Exp p) -> printf "%6.4f  " (exp p)
-    printf "\n\n"
-    -}
+    --
     -- Run @Last@ probability algorithm to determine the probability for
     -- each mutation to be the last one
+    --
     hPrintf oH "Chain end probabilities:\n"
     let fps = boundaryPartFunLast Nothing probScaleFunction ls
-    forM_ mpks $ \(mp,k) -> hPrintf oH "%6d  " (mp+1)
+    forM_ mpks $ \(mp,k) -> hPrintf oH "  %6d" (mp+1)
     hPrintf oH "\n"
-    forM_ (bpNormalized fps) $ \(_, Exp p) -> hPrintf oH "%6.4f  " (exp p)
+    forM_ (bpNormalized fps) $ \(_, Exp p) -> hPrintf oH "  %6.4f" (exp p)
     hPrintf oH "\n\n"
+    printf "\n"
     --
     -- Run specialized versions of the above, restricting the first mutation
     -- to the given one. Marginalized over the last probability, and rescaled
@@ -206,7 +210,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     --
     -- Generate the path with maximal edge probability
     --
-    let eprobsFirst = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+    let eprobsFirst = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems colMarginals) eps
   --  let eprobs = eprobs' { scoreNodes = VU.map (Exp . log) . VU.fromList $ M.toList rowMarginals }
     let (Exp maxprob,mpbt) = SHP.runMaxEdgeProbFirst eprobsFirst
     hPrintf oH "Maximal Edge Log-Probability Sum: %6.4f with at least %d co-optimal paths\n" maxprob (length $ take cooptCount mpbt)
@@ -236,20 +240,20 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
                          SHP.BTedge (From ff:.To tt) -> ff
           in  map go $ reverse $ concat $ take 1 mpbt
     let meaAnno = map (\k -> map (show . (+1) . fst) mpks !! k) meaOrder
-    let meaEps = [ (ee !! l) !! k | let ee = groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps, k <- meaOrder, l <- meaOrder ]
+    let meaEps = [ (ee !! k) !! l | let ee = groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps, k <- meaOrder, l <- meaOrder ]
     gridFile [SVG,EPS] (outprefix ++ "-edge-meaorder") fw fs nn nn meaAnno meaAnno (map snd meaEps)
     print eps
     print meaEps
-    --let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
-    --let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
-    --print maxprobLast
-    --print $ map (\(k,Exp p) -> (k,exp $ p - maxprobLast)) lastLogProbs
-    --print $ take 1 mpbtLast
-    --let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems colMarginals) eps
-    --let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
-    --print maxprobLast
-    --print $ map (\(k,Exp p) -> (k,exp $ p - maxprobLast)) lastLogProbs
-    --print $ take 1 mpbtLast
+    let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+    let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
+    print maxprobLast
+    print $ map (\(k,Exp p) -> (k,exp $ p - maxprobLast)) lastLogProbs
+    mapM_ print $ concat $ take 2 mpbtLast
+    let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems colMarginals) eps
+    let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
+    print maxprobLast
+    print $ map (\(k,Exp p) -> (k,exp $ p - maxprobLast)) lastLogProbs
+    mapM_ print $ concat $ take 2 mpbtLast
 {-# NoInline runMutationOrder #-}
 
 posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction

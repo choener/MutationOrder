@@ -97,9 +97,10 @@ aInside :: Monad m => Maybe Int -> ScaleFunction -> Landscape -> SigMinDist m (L
 aInside restrictStartNode scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `xor` bit t)
-                                          res  = x + (Exp . negate $ scaled frna trna)
+                                          res' = Exp . negate $ scaled frna trna
+                                          res  = x * res'
                                       in
-                                          -- traceShow ("edge",fset,f,t) $
+                                          traceShow ("edge",fset,f,t,scaled frna trna, res', res) $
                                           maybe res (\k -> if k==t then 0 else res) restrictStartNode
   , mpty = \() -> 1
   , node = \(nset:.To n) ->
@@ -107,7 +108,7 @@ aInside restrictStartNode scaled Landscape{..} = SigMinDist
           trna = rnas HM.! (BitSet 0 `xor` bit n)
           res = Exp . negate $ scaled frna trna
       in
-          -- traceShow ("node",nset,n) .
+          traceShow ("node",nset,n, scaled frna trna, res) $
           maybe res (\k -> if k==n then res else 0) restrictStartNode
   , fini = id
   , h    = SM.foldl' (+) 0
