@@ -124,7 +124,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     hPrintf oH "\n"
     forM_ (bpNormalized fps) $ \(_, Exp p) -> hPrintf oH "  %6.4f" (exp p)
     hPrintf oH "\n\n%s\n\n" $ replicate 80 '='
-    printf "\n"
+    --printf "\n"
     --
     -- Run specialized versions of the above, restricting the first mutation
     -- to the given one. Marginalized over the last probability, and rescaled
@@ -253,13 +253,13 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -- the rowMarginals hold the probabily to begin with a mutation. Since
     -- @Last@ goes from first to last mutation, this is what we need.
     let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
-    print eprobsLast
-    print $ PA.assocs $ scoreMatrix eprobsLast
+    --print eprobsLast
+    --print $ PA.assocs $ scoreMatrix eprobsLast
     let (Exp maxprobLast,lastLogProbs,mpbtLast') = SHP.runMaxEdgeProbLast eprobsLast
     let mpbtLast = map reverse mpbtLast'
-    print maxprobLast
-    print lastLogProbs
-    mapM_ print $ mpbtLast
+    --print maxprobLast
+    --print lastLogProbs
+    --mapM_ print $ mpbtLast
     hPrintf oH "Maximal edge log-probability sum: %6.4f (P = %10.8f) with at least %d co-optimal paths\n" maxprobLast (exp maxprobLast) (length $ take cooptCount mpbtLast)
     hPutStrLn oH "(first mutation to extant species)\n"
     forM_ (take cooptPrint mpbtLast) $ \bt -> do
@@ -289,8 +289,8 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     let meaAnno = map (\k -> map (show . (+1) . fst) mpks !! k) meaOrder
     let meaEps = [ (ee !! k) !! l | let ee = groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps, k <- meaOrder, l <- meaOrder ]
     gridFile [SVG,EPS] (outprefix ++ "-edge-meaorder") fw fs nn nn meaAnno meaAnno (map snd meaEps)
-    print eps
-    print meaEps
+    --print eps
+    --print meaEps
     {-
     let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
     let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
