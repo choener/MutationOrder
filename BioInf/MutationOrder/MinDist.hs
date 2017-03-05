@@ -100,7 +100,7 @@ aInside restrictStartNode scaled Landscape{..} = SigMinDist
                                           res' = Exp . negate $ scaled frna trna
                                           res  = x * res'
                                       in
-                                          traceShow ("edge",fset,f,t,frna,trna,scaled frna trna, res', res) $
+                                          -- traceShow ("edge",fset,f,t,frna,trna,scaled frna trna, res', res) $
                                           maybe res (\k -> if k==t then 0 else res) restrictStartNode
   , mpty = \() -> 1
   , node = \(nset:.To n) ->
@@ -108,7 +108,7 @@ aInside restrictStartNode scaled Landscape{..} = SigMinDist
           trna = rnas HM.! (BitSet 0 `xor` bit n)
           res = Exp . negate $ scaled frna trna
       in
-          traceShow ("node",nset,n, frna, trna, scaled frna trna, res) $
+          -- traceShow ("node",nset,n, frna, trna, scaled frna trna, res) $
           maybe res (\k -> if k==n then res else 0) restrictStartNode
   , fini = id
   , h    = SM.foldl' (+) 0
