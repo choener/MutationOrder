@@ -53,6 +53,7 @@ import           System.Exit (exitSuccess)
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
 import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..), getBoundary)
 import           Data.PrimitiveArray.ScoreMatrix
+import qualified Data.PrimitiveArray as PA
 import           Diagrams.TwoD.ProbabilityGrid
 import qualified Data.Bijection.HashMap as B
 import qualified ShortestPath.SHP.Edge.MinDist as SHP
@@ -83,6 +84,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     let bitToNuc = M.fromList $ map (swap . first (+1)) mpks
     let nn = length mpks
     hPrintf oH "number of mutations: %d\n" $ mutationCount ls
+    hPrintf oH "\n%s\n\n" $ replicate 80 '='
     --
     -- Run co-optimal lowest energy changes
     --
@@ -93,12 +95,17 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     let (printbs,countbs) = splitAt cooptPrint bs
     hPrintf oH "Best energy gain: %10.4f\n" e
     hPrintf oH "Number of co-optimal paths: %10d\n" countcount -- ((length printbs) + (length $ take (cooptCount-cooptPrint) bs))
-    hPutStrLn oH ""
     forM_ printbs (T.hPutStrLn oH)
+    hPrintf oH "%s\n\n" $ replicate 80 '='
     --
     -- Run @First@ probability algorithm to determine the probability for
     -- each mutation to be the initial one
     --
+    -- TODO this is completely wrong, because it still starts at the
+    -- ancestral sequence. We would have to start at the extant sequence.
+    -- Need to later think about this. But do not use any @First@ functions
+    -- now!
+    {-
     hPrintf oH "Chain begin probabilities:\n"
     let fps = boundaryPartFunFirst Nothing probScaleFunction ls
     forM_ mpks $ \(mp,k) -> hPrintf oH "  %6d" (mp+1)
@@ -106,6 +113,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     forM_ fps $ \(_, Exp p) -> hPrintf oH "  %6.4f" (exp p)
     hPrintf oH "\n\n"
     printf "\n"
+    -}
     --
     -- Run @Last@ probability algorithm to determine the probability for
     -- each mutation to be the last one
@@ -115,7 +123,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     forM_ mpks $ \(mp,k) -> hPrintf oH "  %6d" (mp+1)
     hPrintf oH "\n"
     forM_ (bpNormalized fps) $ \(_, Exp p) -> hPrintf oH "  %6.4f" (exp p)
-    hPrintf oH "\n\n"
+    hPrintf oH "\n\n%s\n\n" $ replicate 80 '='
     printf "\n"
     --
     -- Run specialized versions of the above, restricting the first mutation
@@ -125,6 +133,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     --
     hPrintf oH "Restricted chain end probabilities\n"
     let rbps = map (\(mp,k) -> (mp,k,boundaryPartFunLast (Just k) probScaleFunction ls)) mpks
+    {-
     forM_ rbps $ \(mp,k,bp) -> do
       hPrintf oH "%5d %5d\n" (mp+1) k
       forM_ (bpUnnormalized bp) $ \(l,Exp p) -> hPrintf oH "%7d " (bitToNuc M.! getBoundary l)
@@ -132,6 +141,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
       forM_ (bpUnnormalized bp) $ \(l,p) -> hPrintf oH "%7.2f " (exp . ln $ p / bpTotal bp)
       hPrintf oH "\n"
     hPrintf oH "\n"
+    -}
     -- collect all restricted partition function scores and prepare for
     -- normalization
     let firstlastUn = M.fromList [ ((mp+1,bitToNuc M.! getBoundary l), logp)
@@ -155,12 +165,13 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
       hPrintf oH "    %6.4f\n" $ rowMarginals M.! frst
     hPrintf oH "Σ      "
     forM_ (M.elems colMarginals) $ hPrintf oH "%6.4f "
-    hPrintf oH "\n"
+    hPrintf oH "\n\n"
     hPrintf oH "divergence from proper normalization: %10.8f\n" (1 - Prelude.sum firstlastP)
     hPrintf oH "row marginal sum %10.8f\n" (Prelude.sum rowMarginals)
     hPrintf oH "col marginal sum %10.8f\n" (Prelude.sum colMarginals)
-    hPrintf oH "\n"
+    hPrintf oH "\n%s\n\n" $ replicate 80 '='
     -- debug on
+    {-
     hPrintf oH "%f\n" $ ln firstlastZ
     hPrintf oH "%s " $ replicate 10 ' '
     forM_ (M.elems bitToNuc) $ \mut -> hPrintf oH "%10d " mut
@@ -179,6 +190,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
       forM_ (M.elems bitToNuc) $ \lst -> hPrintf oH "%10.4f " ((ln $ firstlastUn M.! (frst,lst)) - ln firstlastZ)
       hPrintf oH "\n"
     hPrintf oH "\n"
+    -}
     -- debug off
     -- debug on
     -- calculate first weight, unnormalized
@@ -190,6 +202,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -- a while longer.
     --
     let (ibs,eps) = edgeProbPartFun probScaleFunction ls
+    hPrintf oH "pairwise next mutation probabilities:\n\n"
     hPrintf oH "       "
     forM_ mpks $ \(mp,k) -> hPrintf oH " %6d" k
     hPutStrLn oH ""
@@ -207,11 +220,12 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     forM_ (M.toList colSums) $ \(c,Exp p) -> hPrintf oH (" %6.4f") (exp p)
     hPutStrLn oH "\n"
     gridFile [SVG,EPS] (outprefix ++ "-edge") fw fs nn nn (map (show . (+1) . fst) mpks) (map (show . (+1) . fst) mpks) (map snd eps)
+    hPrintf oH "\n%s\n\n" $ replicate 80 '='
     --
     -- Generate the path with maximal edge probability
     --
+    {-
     let eprobsFirst = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems colMarginals) eps
-  --  let eprobs = eprobs' { scoreNodes = VU.map (Exp . log) . VU.fromList $ M.toList rowMarginals }
     let (Exp maxprob,mpbt) = SHP.runMaxEdgeProbFirst eprobsFirst
     hPrintf oH "Maximal Edge Log-Probability Sum: %6.4f with at least %d co-optimal paths\n" maxprob (length $ take cooptCount mpbt)
     hPutStrLn oH "first mutation to extant species\n"
@@ -235,15 +249,49 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
         (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just ff)
       hPutStrLn oH ""
     hPutStrLn oH ""
+    -}
+    -- the rowMarginals hold the probabily to begin with a mutation. Since
+    -- @Last@ goes from first to last mutation, this is what we need.
+    let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+    print eprobsLast
+    print $ PA.assocs $ scoreMatrix eprobsLast
+    let (Exp maxprobLast,lastLogProbs,mpbtLast') = SHP.runMaxEdgeProbLast eprobsLast
+    let mpbtLast = map reverse mpbtLast'
+    print maxprobLast
+    print lastLogProbs
+    mapM_ print $ mpbtLast
+    hPrintf oH "Maximal edge log-probability sum: %6.4f (P = %10.8f) with at least %d co-optimal paths\n" maxprobLast (exp maxprobLast) (length $ take cooptCount mpbtLast)
+    hPutStrLn oH "(first mutation to extant species)\n"
+    forM_ (take cooptPrint mpbtLast) $ \bt -> do
+      let extractMut (SHP.BTnode (_:.To n)) = n
+          extractMut (SHP.BTedge (From ff:.To tt)) = tt
+      let mutationOrder = tail $ scanl (\set mut -> set `setBit` extractMut mut) zeroBits bt
+      let prettyPrint mut k = do
+            let rna = rnas ls HM.! mut
+            hPrintf oH "   %3s  %s\n        %s   MFE %6.4f\n        %s   CNT %6.4f\n"
+                    (maybe "anc" (show . (+1) . fst . (!!) mpks) k)
+                    (BS.unpack $ primarySequence rna)
+                    (BS.unpack $ mfeStructure rna)
+                    (mfeEnergy rna)
+                    (BS.unpack $ centroidStructure rna)
+                    (centroidEnergy rna)
+            hPutStrLn oH $ replicate 8 ' ' ++ (take (BS.length $ primarySequence rna) . concat $ zipWith (\xs x -> xs ++ show x) (repeat $ "    .    ") (drop 1 $ cycle [0..9]))
+      prettyPrint zeroBits Nothing
+      forM_ (zip bt mutationOrder) $ \case
+        (SHP.BTnode (_:.To n),mut) -> prettyPrint mut (Just n)
+        (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just tt)
+      hPutStrLn oH ""
+    hPutStrLn oH ""
     let meaOrder =
           let go = \case SHP.BTnode (_:.To n) -> n
-                         SHP.BTedge (From ff:.To tt) -> ff
-          in  map go $ reverse $ concat $ take 1 mpbt
+                         SHP.BTedge (From ff:.To tt) -> tt
+          in  map go $ concat $ take 1 mpbtLast
     let meaAnno = map (\k -> map (show . (+1) . fst) mpks !! k) meaOrder
     let meaEps = [ (ee !! k) !! l | let ee = groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps, k <- meaOrder, l <- meaOrder ]
     gridFile [SVG,EPS] (outprefix ++ "-edge-meaorder") fw fs nn nn meaAnno meaAnno (map snd meaEps)
     print eps
     print meaEps
+    {-
     let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
     let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
     print maxprobLast
@@ -254,6 +302,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     print maxprobLast
     print $ map (\(k,Exp p) -> (k,exp $ p - maxprobLast)) lastLogProbs
     mapM_ print $ concat $ take 2 mpbtLast
+    -}
 {-# NoInline runMutationOrder #-}
 
 posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction
