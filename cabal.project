@@ -6,8 +6,8 @@ packages: .
 --          ../Lib-DPutils
           ../Lib-FormalGrammars
 --          ../Lib-OrderedBits
---          ../Lib-PrimitiveArray
---          ../Lib-PrimitiveArray-Pretty
+          ../Lib-PrimitiveArray
+          ../Lib-PrimitiveArray-Pretty
           ../Lib-ShortestPathProblems
---          ../Lib-ViennaRNA-bindings
+          ../Lib-ViennaRNA-bindings
 

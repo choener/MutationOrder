@@ -136,7 +136,11 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     let firstlastZ = Numeric.Log.sum [ bpTotal bp | (_,_,bp) <- rbps ]
     let firstlastLogP = M.map (/firstlastZ) firstlastUn
     let firstlastP = M.map (exp . ln) firstlastLogP
+    -- rowMarginals gives the total probability that the mutation order
+    -- begins with this mutation.
     let rowMarginals = M.mapKeysWith (+) fst firstlastP
+    -- colMarginals gives the total probability that the mutation order
+    -- ends with this mutation.
     let colMarginals = M.mapKeysWith (+) snd firstlastP
     hPrintf oH "       "
     forM_ (M.elems bitToNuc) $ \mut -> hPrintf oH "%6d " mut
@@ -202,9 +206,9 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     --
     -- Generate the path with maximal edge probability
     --
-    let eprobs = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+    let eprobsFirst = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
   --  let eprobs = eprobs' { scoreNodes = VU.map (Exp . log) . VU.fromList $ M.toList rowMarginals }
-    let (Exp maxprob,mpbt) = SHP.runMaxEdgeProb eprobs
+    let (Exp maxprob,mpbt) = SHP.runMaxEdgeProbFirst eprobsFirst
     hPrintf oH "Maximal Edge Log-Probability Sum: %6.4f with at least %d co-optimal paths\n" maxprob (length $ take cooptCount mpbt)
     hPutStrLn oH "first mutation to extant species\n"
     forM_ (take cooptPrint mpbt) $ \bt -> do
@@ -227,6 +231,25 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
         (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just ff)
       hPutStrLn oH ""
     hPutStrLn oH ""
+    let meaOrder =
+          let go = \case SHP.BTnode (_:.To n) -> n
+                         SHP.BTedge (From ff:.To tt) -> ff
+          in  map go $ reverse $ concat $ take 1 mpbt
+    let meaAnno = map (\k -> map (show . (+1) . fst) mpks !! k) meaOrder
+    let meaEps = [ (ee !! l) !! k | let ee = groupBy ((==) `on` (fromEdgeBoundaryFst . fst)) eps, k <- meaOrder, l <- meaOrder ]
+    gridFile [SVG,EPS] (outprefix ++ "-edge-meaorder") fw fs nn nn meaAnno meaAnno (map snd meaEps)
+    print eps
+    print meaEps
+    --let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems rowMarginals) eps
+    --let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
+    --print maxprobLast
+    --print $ map (\(k,Exp p) -> (k,exp $ p - maxprobLast)) lastLogProbs
+    --print $ take 1 mpbtLast
+    --let eprobsLast = edgeProbScoreMatrix ls (Prelude.map (Exp . log) $ M.elems colMarginals) eps
+    --let (Exp maxprobLast,lastLogProbs,mpbtLast) = SHP.runMaxEdgeProbLast eprobsLast
+    --print maxprobLast
+    --print $ map (\(k,Exp p) -> (k,exp $ p - maxprobLast)) lastLogProbs
+    --print $ take 1 mpbtLast
 {-# NoInline runMutationOrder #-}
 
 posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction
