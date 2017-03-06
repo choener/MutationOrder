@@ -1,0 +1,20 @@
+resolver: lts-8.4
+
+packages:
+- '.'
+
+extra-deps:
+-ADPfusion-0.5.2.2
+-ADPfusionSet-0.0.0.1
+-bimaps-0.1.0.2
+-BiobaseXNA-0.9.3.1
+-DPutils-0.0.1.0
+-FormalGrammars0.3.1.1
+-OrderedBits-0.0.1.2
+-PrimitiveArray-0.8.0.1
+-PrimitiveArray-Pretty-0.0.0.2
+-ShortestPathProblems-0.0.0.1
+-ViennaRNA-bindings-0.233.1.2
+
+flags:
+
