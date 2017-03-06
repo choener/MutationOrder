@@ -4,6 +4,12 @@ packages:
 - '.'
 
 extra-deps:
+# more up-to-date than stack
+- aeson-1.1.0.0
+- serialize-instances-0.1.0.0
+- storable-tuple-0.0.3.2
+- vector-strategies-0.4
+# my dependencies
 - ADPfusion-0.5.2.2
 - ADPfusionSet-0.0.0.1
 - bimaps-0.1.0.2
