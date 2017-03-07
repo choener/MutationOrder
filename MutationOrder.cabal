@@ -1,5 +1,5 @@
 name:           MutationOrder
-version:        0.0.0.1
+version:        0.0.0.2
 author:         Maria Beatriz Walter Costa, Christian Hoener zu Siederdissen, 2017
 copyright:      Christian Hoener zu Siederdissen, 2017
 homepage:       https://github.com/choener/MutationOrder
@@ -111,6 +111,7 @@ executable MutationOrder
   build-depends: base
                , bytestring
                , cmdargs      >= 0.10
+               , file-embed   >= 0.0.8
                , filepath
                --
                , MutationOrder
@@ -119,6 +120,7 @@ executable MutationOrder
   default-extensions: BangPatterns
                     , DeriveDataTypeable
                     , RecordWildCards
+                    , TemplateHaskell
   main-is:
     MutationOrder.hs
   default-language:

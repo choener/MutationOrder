@@ -3,10 +3,12 @@
 
 module Main where
 
-import System.Console.CmdArgs
-import System.FilePath
+import           Control.Monad
+import           Data.FileEmbed
 import qualified Data.ByteString.Char8 as BS
-import Control.Monad
+import           System.Console.CmdArgs
+import           System.Exit (exitSuccess, exitFailure)
+import           System.FilePath
 
 import BioInf.MutationOrder
 import BioInf.MutationOrder.RNA (createRNAlandscape)
@@ -19,7 +21,7 @@ data ScoreType
   deriving (Show,Data,Typeable)
 
 data Options
-  = Options
+  = MutationOrder
     { infiles       :: [FilePath]
     , workdb        :: FilePath
     , temperature   :: Double
@@ -34,27 +36,29 @@ data Options
     , equalStart    :: Bool
     , posscaled :: Maybe (Double,Double)
     , lkupfile :: Maybe FilePath
+    , showmanual    :: Bool
     }
   | GenSequences
     { infiles :: [FilePath]
     }
   deriving (Show,Data,Typeable)
 
-oOptions = Options
+oMutationOrder = MutationOrder
   { infiles       = def &= args
   , workdb        = "work.db" &= help "name of the database to store intermediates in"
   , temperature   = 1.0  &= help "lower temperatures favor the more optimal paths, defaults to 1.0"
-  , fillweight    = FWlog
-  , fillstyle     = FSfull
-  , cooptcount    = 100000
-  , cooptprint    = 2
-  , outprefix     = "tmp"
+  , fillweight    = FWlog &= help "scale options for probability plots: fwlog, fwlinear, fwfill"
+  , fillstyle     = FSfull &= help "fill options for probability plots: fsopacitylog, fsopacitylinear, fsfull"
+  , cooptcount    = 1000  &= help "how many co-optimals to count"
+  , cooptprint    = 2   &= help "how many co-optimals to actually print out"
+  , outprefix     = "tmp" &= help "prefix for output files"
   , scoretype     = Centroid &= help "choose 'mfe', 'centroid', 'pairdistmfe', or 'pairdistcen' for the evaluation of each mutational step"
   , positivesquared = False &= help "square positive energies to penalize worse structures"
   , onlypositive  = False &= help "minimize only over penalties, not energy gains"
-  , equalStart    = False
-  , posscaled     = Nothing
-  , lkupfile = Nothing
+  , equalStart    = False &= help "run mea with equal start probabilities"
+  , posscaled     = Nothing &= help "--posscaled=x,y   scale all values >= x by using y as exponent"
+  , lkupfile = Nothing  &= help "developer option: if an RNAfold file with foldings exists, then use it"
+  , showmanual = False  &= help "shows the manual"
   }
 
 oGenSequences = GenSequences
@@ -63,9 +67,9 @@ oGenSequences = GenSequences
 
 main :: IO ()
 main = do
-  o <- cmdArgs $ modes [oOptions, oGenSequences] &= verbosity
+  o <- cmdArgs $ modes [oMutationOrder &= auto, oGenSequences] &= verbosity
   case o of
-    Options{} -> mainProgram o
+    MutationOrder{} -> mainProgram o
     GenSequences{} -> genSequences o
 
 genSequences o = do
@@ -76,8 +80,17 @@ genSequences o = do
   forM_ ls $ \(k,sq) -> BS.putStrLn sq
   return ()
 
+embeddedManual = $(embedFile "README.md")
+
 mainProgram oOptions = do
-  let Options{..} = oOptions
+  let MutationOrder{..} = oOptions
+  when showmanual $ do
+    BS.putStrLn embeddedManual
+    exitSuccess
+  unless (length infiles == 2) $ do
+    BS.putStrLn embeddedManual
+    putStrLn "\n\n\nThis program expects exactly two equal-length fasta files as input"
+    exitFailure
   isL <- isLoud
   let fwdScaleFunction
         = (if positivesquared then squaredPositive else id)
