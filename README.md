@@ -27,13 +27,20 @@ In detail:
 
 ## example usage
 
-We assume that you have two Fasta files, *from.fa* and *to.fa* but they can be
-named however is convenient (say *chimp.fa* and *human.fa*).  Each file has to
-contain exactly one sequence and both sequences have to be of the same length.
+We assume that you have two Fasta files, *chimp_118.fa* and *human_118.fa* but
+they can be named however is convenient. Each file has to contain exactly one
+sequence and both sequences have to be of the same length.
+
+For testing with chimp and human, the provided chimp-human.json.gz database
+should be used, otherwise the initial foldings will be recalculated. All
+required files are available under 'Binaries' at the bottom of the page.
+
+In case, you don't want or can't use the provided work database, run
+./MutationOrder with --verbose
 
 We then run
 
-    ./MutationOrder --workdb from-to.json.gz --scoretype pairdistcen --onlypositive --outputprefix test
+    ./MutationOrder --workdb chimp-human.json.gz --scoretype pairdistcen --onlypositive --outputprefix test chimp_118.fa human_118.fa
 
 This will generate ```test.run```, ```test-edge.eps```, and
 ```test-meaorder.eps```.
