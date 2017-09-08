@@ -1,5 +1,5 @@
 name:           MutationOrder
-version:        0.0.0.2
+version:        0.0.1.0
 author:         Maria Beatriz Walter Costa, Christian Hoener zu Siederdissen, 2017
 copyright:      Christian Hoener zu Siederdissen, 2017
 homepage:       https://github.com/choener/MutationOrder
@@ -11,19 +11,23 @@ license-file:   LICENSE
 build-type:     Simple
 stability:      experimental
 cabal-version:  >= 1.10.0
-tested-with:    GHC == 7.10.3, GHC == 8.0.1
+tested-with:    GHC == 8.0.2
 synopsis:       Most likely order of mutation events in RNA
 description:
                 Determine the most likely order in which single nucleotide
                 mutations happened between two RNA sequences.
                 .
-                Developed to analyse the @HAR 1@ region.
+                Developed to analyse the @HAR 1@ region, but agnostic to the
+                actual sequences and can be used to analyze any RNA sequence
+                that fits the algorithmic constraints.
                 .
                 As long as the two input RNAs are small enough enough (couple
                 hundred nucleotides) and the number of mutations is small
                 enough (around 20-26, since the algorithm is exponential in
                 this number) the algorithm should work for similar problems
                 without changes.
+                .
+                We currently only consider point mutations, not in-dels.
 
 
 
@@ -165,4 +169,9 @@ test-suite properties
 source-repository head
   type: git
   location: git://github.com/choener/MutationOrder
+
+source-repository this
+  type: git
+  location: git://github.com/choener/Gene-CluEDO/tree/0.0.1.0
+  tag: 0.0.1.0
 

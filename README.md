@@ -95,10 +95,13 @@ which minimizes the base pair distance between following mutations using centroi
 
 # Installation
 
+Pre-built binaries for Linux are avaiable under [github
+releases](https://github.com/choener/MutationOrder/releases)
+
 Follow [this
 link](http://www.bioinf.uni-leipzig.de/~choener/software/MutationOrder.html) to
-the bottom of the page. Binaries are available for download and installation
-from sources via *Haskell Stack* are described.
+the bottom of the page for instructions to build from source.
+
 
 
 #### Contact
