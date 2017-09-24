@@ -72,6 +72,10 @@ main = do
     MutationOrder{} -> mainProgram o
     GenSequences{} -> genSequences o
 
+-- | Needs extra options on: (i) globally active backmutations. For each
+-- position try all four nucleotides. (ii) Additional active columns. For each
+-- position, try all four nucleotides.
+
 genSequences o = do
   let GenSequences{..} = o
   ancestral <- stupidReader $ infiles !! 0
