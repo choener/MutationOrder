@@ -72,7 +72,7 @@ library
                , zlib                   >= 0.6
                --
                , ADPfusion              == 0.5.2.*
-               , ADPfusionSet           == 0.0.0.*
+               , ADPfusionSet           == 0.0.1.*
                , bimaps                 == 0.1.0.*
                , BiobaseXNA             == 0.9.3.*
                , DPutils                == 0.0.1.*
