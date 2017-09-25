@@ -54,6 +54,7 @@ library
                , aeson                  >= 1.1
                , attoparsec             >= 0.13
                , bytestring
+               , bytestring-trie        >= 0.2
                , cereal                 >= 0.5
                , cereal-vector          >= 0.2
                , containers
@@ -65,6 +66,7 @@ library
                , log-domain             >= 0.10
                , parallel               >= 3.2
                , serialize-instances    >= 0.1
+               , split                  >= 0.2
                , text                   >= 1.0
                , unordered-containers   >= 0.2.7
                , vector                 >= 0.11
@@ -72,7 +74,7 @@ library
                , zlib                   >= 0.6
                --
                , ADPfusion              == 0.5.2.*
-               , ADPfusionSet           == 0.0.1.*
+               , ADPfusionSet           == 0.0.0.*
                , bimaps                 == 0.1.0.*
                , BiobaseXNA             == 0.9.3.*
                , DPutils                == 0.0.1.*

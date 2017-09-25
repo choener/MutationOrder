@@ -222,12 +222,24 @@ newtype BackmutationCol = BackmutationCol Int
 -- ancestral and extant have different nucleotides during global backmutation
 -- generation.
 
-createRNAlandscape2 ∷ (Monad m) ⇒ [Char] → GlobalBackmutations → [BackmutationCol] → Ancestral → Extant → ExceptT String m (Int,[ByteString])
+createRNAlandscape2
+  ∷ (Monad m)
+  ⇒ [Char]
+  → GlobalBackmutations
+  → [BackmutationCol]
+  → Ancestral
+  → Extant
+  → ExceptT String m (Int,[ByteString], [(Int,Char,[ByteString])])
+  -- ^ Return A complex triple with (total sequence count, original problem
+  -- sequences, list of global variants). The list of global variants holds for
+  -- each (index,single nucleotide intermediate, list of variant sequences).
 createRNAlandscape2 alphabet (GlobalBackmutations g) bs (Ancestral a) (Extant e) = do
   -- some sanity checks
   unless (BS.length a == BS.length e) $ throwE "different sequence lengths encountered"
   -- expand later!
   unless (g <= 1) $ throwE "we currently allow *at most* one globally active backmutation"
+  -- TODO need to fix up interesting columns
+  unless (null bs) $ throwE "fix up interesting columns"
   -- collect the possible characters for each position.
   let ahm = IM.fromList . zip [0∷Int ..] . map ((:[]) . toUpper) $ BS.unpack a
   let ehm = IM.fromList . zip [0..] . map ( (:[]) . toUpper) $ BS.unpack e
@@ -243,9 +255,18 @@ createRNAlandscape2 alphabet (GlobalBackmutations g) bs (Ancestral a) (Extant e)
   let globalModifiers = concat . map (\(k,xs) → map (k,) xs) $ IM.toAscList gbm
   -- we now repeat the local generation, but "splice in" the globally modified characters
   -- TODO we currently allow exactly one global modifier in @[(k,z)]@
-  let globals = if g == 1 then [ BS.take k orig `BS.append` (BS.cons z (BS.drop (k+1) orig)) | orig ← localList hm, (k,z) ← globalModifiers ] else []
+  let globals = if g == 1
+                  then [ (k, z, [ BS.take k orig `BS.append` (BS.cons z (BS.drop (k+1) orig))
+                                | orig ← localList hm
+                                -- produce a sequence only if this mutation is
+                                -- independent of the a/e mutations OR we look
+                                -- at a variant or the ancestral sequence. This
+                                -- prevents duplicate entries.
+                                , (a `BS.index` k == e `BS.index` k) || (a `BS.index` k == orig `BS.index` k)  ] )
+                       | (k,z) ← globalModifiers ]
+                  else []
   let globalCount = if g == 1 then localCount * length globalModifiers else 0
-  return $ (localCount + globalCount, localList hm ++ globals)
+  return $ (localCount + globalCount, localList hm, globals)
 
 -- |
 --

@@ -25,6 +25,23 @@ In detail:
 
 # Usage instructions
 
+## sequence generation
+
+First, the sequence data base needs to be created. The following assumptions are being made:
+- chimp_118.fa is the origin sequence.
+- human_118.fa is the target sequence.
+- all known mutations are to be ordered.
+- One intermediate (or backmutation) is allowed. This will already lead to an
+  expansion of the sequence space from ca. 250K sequences to 83.6M sequences!
+  Use your local compute cluster or download our precalculated data.
+
+The following command will prepare the working database and populate the seqs subdirectory.
+
+    mkdir workdb
+    mkdir workdb/seqs
+    mkdir workdb/rnafold
+    ./MutationOrder gensequences -w workdb --ancestral chimp_118.fa -e human_118.fa -g 1 --sequencelimit 100000000 --alphabet=ACGT --seqsperfile=100000
+
 ## example usage
 
 We assume that you have two Fasta files, *chimp_118.fa* and *human_118.fa* but

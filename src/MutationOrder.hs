@@ -126,14 +126,15 @@ genSequences o = do
     when (null alphabet) $ throwE "use --alphabet=ACGT (or ACGU if your fasta files are RNA-based)"
     a ← liftIO $ stupidReader ancestralSequence
     e ← liftIO $ stupidReader extantSequence
-    (numSeqs, seqs) ← createRNAlandscape2
-                        alphabet
-                        (GlobalBackmutations globalbackmutations)
-                        (map BackmutationCol backmutationcolumns)
-                        (Ancestral a) (Extant e)
+    (numSeqs, origs, sqs) ← createRNAlandscape2
+                              alphabet
+                              (GlobalBackmutations globalbackmutations)
+                              (map BackmutationCol backmutationcolumns)
+                              (Ancestral a) (Extant e)
     unless (numSeqs <= sequenceLimit) $ throwE $ "combinatiorial explosion (" ++ show numSeqs ++ "): reduce search space or allow for higher --sequencelimit"
     -- write out sequences
-    writeSequenceFiles (workdb </> "seqs") prefixlength seqsperfile seqs
+    writeSequenceFiles (workdb </> "seqs") prefixlength seqsperfile
+      $ origs ++ concatMap (\(_,_,xs) → xs) sqs
   case e of
     Left err → print err >> exitFailure
     Right () → return ()

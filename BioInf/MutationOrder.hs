@@ -29,26 +29,30 @@ module BioInf.MutationOrder
   , ScaleFunction (..)
   ) where
 
-import qualified Data.Vector.Unboxed as VU
-import           Data.Tuple (swap)
+import           Control.Arrow (first,second)
+import           Control.Error
 import           Control.Monad (unless,forM_,when)
+import qualified Control.Parallel.Strategies as Par
 import           Data.Bits
 import           Data.ByteString (ByteString)
 import           Data.Function (on)
-import           Data.List (groupBy,sortBy)
+import           Data.List (groupBy,sortBy,foldl')
+import           Data.List.Split (chunksOf)
 import           Data.Ord (comparing)
+import           Data.Tuple (swap)
 import           Numeric.Log
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Vector.Unboxed as VU
 import           System.Directory (doesFileExist)
 import           System.Exit (exitFailure)
-import           Text.Printf
-import           Control.Arrow (first,second)
-import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle)
 import           System.Exit (exitSuccess)
+import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle)
+import           Text.Printf
+import qualified Data.Trie as Trie
 
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
 import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..), getBoundary)
@@ -62,6 +66,8 @@ import           Biobase.Secondary.Diagrams (d1Distance)
 import           BioInf.MutationOrder.EdgeProb
 import           BioInf.MutationOrder.MinDist
 import           BioInf.MutationOrder.RNA
+import           BioInf.MutationOrder.SequenceDB
+import qualified BioInf.MutationOrder.BackMutations as BM
 
 
 
@@ -408,4 +414,38 @@ withDumpFile oH fp ancestral current l = do
     hPrintf oH "database %s does not exist! Folding all intermediate structures. This may take a while!\n" fp
     toFileJSON fp l
     return l
+
+-- | Run the intermediate / backmutation order variant. This variant is slow,
+-- and requires large pre-calculated files, we parallelize and aggregate as
+-- much as possible.
+--
+-- TODO read monad ?!
+
+runBackmutationVariants ∷ Int → [Char] → GlobalBackmutations → [BackmutationCol] → Ancestral → Extant → ExceptT String IO ()
+runBackmutationVariants aggregate alphabet globback backcols ancestral extant = do
+  -- Load all sequences for the original problem -- they are needed anyway
+  (seqCount, origSeqs', variants) ← createRNAlandscape2 alphabet globback backcols ancestral extant
+  let origSeqs = Trie.fromList [ (s,()) | s ← origSeqs' ]
+  origStrs ← filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> readRNAfoldFiles (error "workdb")
+  let rnas = error "bitset -> rnafoldresult data"
+  -- Group into sets of @aggregate@ elements for sequence aggregation
+  let ass = chunksOf aggregate variants
+  forM_ ass $ \as → do
+    -- the required sequences are given by @origSeqs@ but modified at the appropriate position
+    let aggrSeqss = map (\(p,n,xs) → (p,n,Trie.fromList [ (x,()) | x ← xs ])) as
+    let allss = foldl' (\z (_,_,x) → Trie.unionL z x) Trie.empty aggrSeqss
+    -- read in the structures for all as
+    aggrStr ← filter (\r → rnaFoldSequence r `Trie.member` allss) <$> readRNAfoldFiles (error "workdb")
+    let go (p,n,xs) = (p,n) where
+          -- prepare the @ntrs@ data structure for each as
+          ntrs = undefined $ filter (\r → rnaFoldSequence r `Trie.member` xs) aggrStr
+          fMnD = BM.forwardMinDist (error "number of known mutations") (error "scale function") rnas ntrs
+          fwdZ = BM.forwardEvidence (error "number of known mutations") (error "scale function for evidence") rnas ntrs
+    -- parallel calculation and output for the different cases
+    let rs = Par.parMap Par.rdeepseq go aggrSeqss
+    forM_ rs $ \r → do
+      return ()
+    return ()
+  -- print each output
+  return ()
 
