@@ -10,30 +10,34 @@
 
 module BioInf.MutationOrder.RNA where
 
-import           Data.Aeson as DA
-import           Data.Bits
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Arrow (second)
 import           Control.DeepSeq
+import           Control.Error
+import           Control.Monad (unless)
 import           Control.Parallel.Strategies
+import           Data.Aeson as DA
+import           Data.Bits
 import           Data.ByteString (ByteString)
+import           Data.Char (isDigit)
+import           Data.List (sort,nub,(\\))
 import           Data.Maybe (catMaybes)
+import           Data.Monoid
 import           Data.Serialize
+import           Data.Serialize.Instances
+import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Tuple (swap)
 import           Data.Vector.Serialize
 import           Data.Vector.Strategies
 import           Debug.Trace
 import           GHC.Generics
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.HashMap.Strict as HM
+import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import           System.IO.Unsafe (unsafePerformIO)
-import qualified Data.HashMap.Strict as HM
-import           Data.Serialize.Instances
-import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import           Data.Monoid
-import           Data.Char (isDigit)
-import           Data.Tuple (swap)
 
 import qualified Data.Bijection.HashMap as B
 import           BioInf.ViennaRNA.Bindings
@@ -193,6 +197,45 @@ instance FromJSON Landscape where
     landscapeDestination  <- encodeUtf8 <$> v .: "landscapeDestination"
     mutationPositions     <- v .: "mutationPositions"
     return Landscape{..}
+
+newtype Ancestral = Ancestral ByteString
+
+newtype Extant = Extant ByteString
+
+newtype GlobalBackmutations = GlobalBackmutations Int
+
+newtype BackmutationCol = BackmutationCol Int
+
+-- | The new method for creating the RNA landscape. The outgoing stream of
+-- sequences should be directly to the 'BioInf.MutationOrder.SequenceDB'
+-- module, and 'writeSequenceFiles' in particular.
+--
+-- TODO generalise over the alphabet
+
+createRNAlandscape2 ∷ (Monad m) ⇒ GlobalBackmutations → [BackmutationCol] → Ancestral → Extant → ExceptT String m (Int,[ByteString])
+createRNAlandscape2 (GlobalBackmutations g) bs (Ancestral a) (Extant e) = do
+  -- some sanity checks
+  unless (BS.length a == BS.length e) $ throwE "different sequence lengths encountered"
+  -- expand later!
+  unless (g <= 1) $ throwE "we currently allow *at most* one globally active backmutation"
+  -- collect the possible characters for each position.
+  let ahm = IM.fromList . zip [0∷Int ..] . map (:[]) $ BS.unpack a
+  let ehm = IM.fromList . zip [0..] . map (:[]) $ BS.unpack e
+  -- back mutation columns are active together with the above
+  let bhm = IM.fromListWith (++) [ (k,"ACGU") | BackmutationCol k ← bs ]
+  let merge x y = sort . nub $ x++y
+  let hm = IM.unionWith merge (IM.unionWith merge ahm ehm) bhm
+  -- global back mutations, this will introduce only those characters not already present in each column
+  let gbm = IM.fromList [ (k, "ACGU" \\ hm IM.! k) | k ← [0..BS.length a -1] ]
+  -- begin with the set of sequences without any global backmutations
+  let localList = map BS.pack . sequence . map snd . IM.toAscList
+  let localCount = product . map (length . snd) $ IM.toAscList hm -- do *not* count explicitly!
+  let globalModifiers = concat . map (\(k,xs) → map (k,) xs) $ IM.toAscList gbm
+  -- we now repeat the local generation, but "splice in" the globally modified characters
+  -- TODO we currently allow exactly one global modifier in @[(k,z)]@
+  let globals = [ BS.take k orig `BS.append` (BS.cons z (BS.drop (k+1) orig)) | orig ← localList hm, (k,z) ← globalModifiers ]
+  let globalCount = if g == 1 then localCount * length globalModifiers else 0
+  return $ (localCount + globalCount, localList hm ++ globals)
 
 -- |
 --

@@ -61,6 +61,7 @@ library
                , directory
                , errors                 >= 2.0
                , filepath
+               , hashable               >= 1.2
                , log-domain             >= 0.10
                , parallel               >= 3.2
                , serialize-instances    >= 0.1
@@ -129,6 +130,8 @@ executable MutationOrder
                     , DeriveDataTypeable
                     , RecordWildCards
                     , TemplateHaskell
+                    , UnicodeSyntax
+  default-language:
   main-is:
     MutationOrder.hs
   default-language:

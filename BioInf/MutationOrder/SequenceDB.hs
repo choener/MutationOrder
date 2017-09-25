@@ -9,11 +9,13 @@ import           Control.Error
 import           Control.Monad.IO.Class (liftIO)
 import           Data.ByteString.Char8 (ByteString)
 import           Data.Char (isDigit)
-import qualified Data.Char as C
-import qualified Data.Attoparsec.ByteString.Lazy as A
+import           Data.Hashable
+import           GHC.Generics
 import qualified Data.Attoparsec.ByteString.Char8 as AC
+import qualified Data.Attoparsec.ByteString.Lazy as A
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as BSL
+import qualified Data.Char as C
 import           System.Directory (doesFileExist, getDirectoryContents)
 import           System.FilePath ((</>), (<.>))
 import           System.IO.Unsafe (unsafeInterleaveIO)
@@ -86,7 +88,7 @@ data RNAfoldResult = RNAfoldResult
   , rnaFoldCentroidEner   ∷ !Double
   , rnaFoldDiversity      ∷ !Double
   }
-  deriving (Read,Show,Eq,Ord)
+  deriving (Read,Show,Eq,Ord,Generic)
 
 -- | Lazily read @RNAfold@ structures.
 --

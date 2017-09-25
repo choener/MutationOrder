@@ -39,7 +39,21 @@ data Options
     , showmanual    :: Bool
     }
   | GenSequences
-    { infiles :: [FilePath]
+    { ancestralSequence ∷ FilePath
+    -- ^ the (presumably) ancestral sequence from which to start the mutation
+    -- order prediction.
+    , extantSequence ∷ FilePath
+    -- ^ the extant or target sequence to which to mutate.
+    -- 
+    , globalbackmutations ∷ Int
+    -- ^ how many global back mutations to allow. For example, if set to @1@,
+    -- then for each position in the sequence all "unobserved" nucleotides are
+    -- possible with one switch to and one switch back. It is generally a bad
+    -- idea to have more than @1@ here and we only allow exactly 1 backmutation
+    -- with a specialized algorithm (that still takes quite a while to run).
+    , backmutationcolumns ∷ [Int]
+    -- ^ Additional columns for backmutations, may overlap with observed
+    -- mutations.
     }
   deriving (Show,Data,Typeable)
 
@@ -72,9 +86,15 @@ main = do
     MutationOrder{} -> mainProgram o
     GenSequences{} -> genSequences o
 
--- | Needs extra options on: (i) globally active backmutations. For each
--- position try all four nucleotides. (ii) Additional active columns. For each
--- position, try all four nucleotides.
+-- | This is a simple wrapper around the RNA landscape creation. Landscape
+-- creation generates all sequences between ancestral and extant sequence. It
+-- will take into account additional global backmutations and further
+-- backmutation columns. Note that this can *very easily* lead to combinatorial
+-- explosion.
+--
+-- Needs extra options on: (i) globally active backmutations. For each position
+-- try all four nucleotides. (ii) Additional active columns. For each position,
+-- try all four nucleotides.
 
 genSequences o = do
   let GenSequences{..} = o
