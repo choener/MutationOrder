@@ -10,6 +10,7 @@
 
 module BioInf.MutationOrder.RNA where
 
+import           Data.Char (toUpper)
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Arrow (second)
 import           Control.DeepSeq
@@ -211,29 +212,38 @@ newtype BackmutationCol = BackmutationCol Int
 -- module, and 'writeSequenceFiles' in particular.
 --
 -- TODO generalise over the alphabet
+--
+-- TODO currently, the number of backmutations is either @0@ or @1@. For more,
+-- a number of things need to be fixed: (i) creation of all variants of
+-- @1,2,3...g@ backmutations. That is, consider all sequences that have at
+-- least one, but no more than @g@ global back mutations.
+--
+-- TODO this will create duplicate sequences for those columns where the
+-- ancestral and extant have different nucleotides during global backmutation
+-- generation.
 
-createRNAlandscape2 ∷ (Monad m) ⇒ GlobalBackmutations → [BackmutationCol] → Ancestral → Extant → ExceptT String m (Int,[ByteString])
-createRNAlandscape2 (GlobalBackmutations g) bs (Ancestral a) (Extant e) = do
+createRNAlandscape2 ∷ (Monad m) ⇒ [Char] → GlobalBackmutations → [BackmutationCol] → Ancestral → Extant → ExceptT String m (Int,[ByteString])
+createRNAlandscape2 alphabet (GlobalBackmutations g) bs (Ancestral a) (Extant e) = do
   -- some sanity checks
   unless (BS.length a == BS.length e) $ throwE "different sequence lengths encountered"
   -- expand later!
   unless (g <= 1) $ throwE "we currently allow *at most* one globally active backmutation"
   -- collect the possible characters for each position.
-  let ahm = IM.fromList . zip [0∷Int ..] . map (:[]) $ BS.unpack a
-  let ehm = IM.fromList . zip [0..] . map (:[]) $ BS.unpack e
+  let ahm = IM.fromList . zip [0∷Int ..] . map ((:[]) . toUpper) $ BS.unpack a
+  let ehm = IM.fromList . zip [0..] . map ( (:[]) . toUpper) $ BS.unpack e
   -- back mutation columns are active together with the above
-  let bhm = IM.fromListWith (++) [ (k,"ACGU") | BackmutationCol k ← bs ]
+  let bhm = IM.fromListWith (++) [ (k,alphabet) | BackmutationCol k ← bs ]
   let merge x y = sort . nub $ x++y
   let hm = IM.unionWith merge (IM.unionWith merge ahm ehm) bhm
   -- global back mutations, this will introduce only those characters not already present in each column
-  let gbm = IM.fromList [ (k, "ACGU" \\ hm IM.! k) | k ← [0..BS.length a -1] ]
+  let gbm = IM.fromList [ (k, alphabet \\ hm IM.! k) | k ← [0..BS.length a -1] ]
   -- begin with the set of sequences without any global backmutations
   let localList = map BS.pack . sequence . map snd . IM.toAscList
   let localCount = product . map (length . snd) $ IM.toAscList hm -- do *not* count explicitly!
   let globalModifiers = concat . map (\(k,xs) → map (k,) xs) $ IM.toAscList gbm
   -- we now repeat the local generation, but "splice in" the globally modified characters
   -- TODO we currently allow exactly one global modifier in @[(k,z)]@
-  let globals = [ BS.take k orig `BS.append` (BS.cons z (BS.drop (k+1) orig)) | orig ← localList hm, (k,z) ← globalModifiers ]
+  let globals = if g == 1 then [ BS.take k orig `BS.append` (BS.cons z (BS.drop (k+1) orig)) | orig ← localList hm, (k,z) ← globalModifiers ] else []
   let globalCount = if g == 1 then localCount * length globalModifiers else 0
   return $ (localCount + globalCount, localList hm ++ globals)
 

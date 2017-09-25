@@ -6,7 +6,7 @@ module BioInf.MutationOrder.SequenceDB where
 
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Error
-import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad.IO.Class (liftIO, MonadIO)
 import           Data.ByteString.Char8 (ByteString)
 import           Data.Char (isDigit)
 import           Data.Hashable
@@ -32,7 +32,8 @@ type SeqsPerFile = Int
 -- free prefix is chosen.
 
 writeSequenceFiles
-  ∷ FilePath
+  ∷ (MonadIO m)
+  ⇒ FilePath
   -- ^ Directory to write to.
   → PrefixLen
   -- ^ Number of characters in the prefix to count up. Fail if the prefix space
@@ -41,7 +42,7 @@ writeSequenceFiles
   -- ^ How many sequences to write per file
   → [ByteString]
   -- ^ Sequences to write out.
-  → ExceptT String IO ()
+  → ExceptT String m ()
 writeSequenceFiles fp pfx spf xs = do
   -- cull prefix list to unused prefixes only
   let unused [] = throwE "writeSequenceFiles: prefix space empty"
@@ -137,15 +138,15 @@ pRNAfold ∷ A.Parser [RNAfoldResult]
 pRNAfold = A.many' go where
   go = do
     -- 1. sequence
-    rnaFoldSequence       ← AC.takeWhile AC.isAlpha_ascii <* AC.skipSpace
+    rnaFoldSequence       ← BS.copy <$> AC.takeWhile AC.isAlpha_ascii <* AC.skipSpace
     -- 2. mfe
-    rnaFoldMFEStruc       ← AC.takeTill AC.isSpace <* AC.skipSpace
+    rnaFoldMFEStruc       ← BS.copy <$> AC.takeTill AC.isSpace <* AC.skipSpace
     rnaFoldMFEEner        ← AC.char '(' *> AC.skipSpace *> AC.double <* AC.char ')' <* AC.skipSpace
     -- 3. ensemble
-    rnaFoldEnsembleStruc  ← AC.takeTill AC.isSpace <* AC.skipSpace
+    rnaFoldEnsembleStruc  ← BS.copy <$> AC.takeTill AC.isSpace <* AC.skipSpace
     rnaFoldEnsembleEner   ← AC.char '[' *> AC.skipSpace *> AC.double <* AC.char ']' <* AC.skipSpace
     -- 4. centroid
-    rnaFoldCentroidStruc  ← AC.takeTill AC.isSpace <* AC.skipSpace
+    rnaFoldCentroidStruc  ← BS.copy <$> AC.takeTill AC.isSpace <* AC.skipSpace
     rnaFoldCentroidEner   ← AC.char '{' *> AC.skipSpace *> AC.double <* AC.skipSpace
     dequal                ← AC.string "d=" *> AC.double <* AC.char '}' <* AC.skipSpace
     -- 5.mfe frequency and diversity

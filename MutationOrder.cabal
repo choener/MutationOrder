@@ -87,6 +87,7 @@ library
     BioInf.MutationOrder.MinDist
     BioInf.MutationOrder.RNA
     BioInf.MutationOrder.SequenceDB
+    BioInf.MutationOrder.BackMutations
   default-extensions: BangPatterns
                     , CPP
                     , DeriveDataTypeable
@@ -120,6 +121,7 @@ executable MutationOrder
   build-depends: base
                , bytestring
                , cmdargs      >= 0.10
+               , errors
                , file-embed   >= 0.0.8
                , filepath
                --

@@ -3,7 +3,9 @@
 
 module Main where
 
+import           Control.Monad.IO.Class (liftIO, MonadIO)
 import           Control.Monad
+import           Control.Error
 import           Data.FileEmbed
 import qualified Data.ByteString.Char8 as BS
 import           System.Console.CmdArgs
@@ -11,7 +13,8 @@ import           System.Exit (exitSuccess, exitFailure)
 import           System.FilePath
 
 import BioInf.MutationOrder
-import BioInf.MutationOrder.RNA (createRNAlandscape)
+import BioInf.MutationOrder.RNA
+import BioInf.MutationOrder.SequenceDB
 
 data ScoreType
   = Mfe
@@ -54,6 +57,16 @@ data Options
     , backmutationcolumns ∷ [Int]
     -- ^ Additional columns for backmutations, may overlap with observed
     -- mutations.
+    , sequenceLimit ∷ Int
+    -- ^ Complain if the number of sequences is above this limit.
+    , workdb ∷ FilePath
+    -- ^ will write files to @workdb </> seqs@
+    , prefixlength ∷ Int
+    -- ^ how many characters as prefix for writing
+    , seqsperfile ∷ Int
+    -- ^ how many sequences to write into each file
+    , alphabet ∷ String
+    -- ^ the different characters that are allowed
     }
   deriving (Show,Data,Typeable)
 
@@ -76,7 +89,15 @@ oMutationOrder = MutationOrder
   }
 
 oGenSequences = GenSequences
-  { infiles = def &= args
+  { ancestralSequence = def
+  , extantSequence = def
+  , globalbackmutations = 0
+  , backmutationcolumns = []
+  , sequenceLimit = 1000000
+  , workdb = def
+  , prefixlength = 4
+  , seqsperfile = 10000
+  , alphabet = ""
   }
 
 main :: IO ()
@@ -98,11 +119,31 @@ main = do
 
 genSequences o = do
   let GenSequences{..} = o
+  e ← runExceptT $ do
+    when (null ancestralSequence) $ throwE "ancestral sequence file?"
+    when (null extantSequence) $ throwE "extant sequence file?"
+    when (null workdb) $ throwE "work db directory?"
+    when (null alphabet) $ throwE "use --alphabet=ACGT (or ACGU if your fasta files are RNA-based)"
+    a ← liftIO $ stupidReader ancestralSequence
+    e ← liftIO $ stupidReader extantSequence
+    (numSeqs, seqs) ← createRNAlandscape2
+                        alphabet
+                        (GlobalBackmutations globalbackmutations)
+                        (map BackmutationCol backmutationcolumns)
+                        (Ancestral a) (Extant e)
+    unless (numSeqs <= sequenceLimit) $ throwE $ "combinatiorial explosion (" ++ show numSeqs ++ "): reduce search space or allow for higher --sequencelimit"
+    -- write out sequences
+    writeSequenceFiles (workdb </> "seqs") prefixlength seqsperfile seqs
+  case e of
+    Left err → print err >> exitFailure
+    Right () → return ()
+  {-
   ancestral <- stupidReader $ infiles !! 0
   current   <- stupidReader $ infiles !! 1
   let ls = snd $ createRNAlandscape Nothing False ancestral current
   forM_ ls $ \(k,sq) -> BS.putStrLn sq
   return ()
+  -}
 
 embeddedManual = $(embedFile "README.md")
 
