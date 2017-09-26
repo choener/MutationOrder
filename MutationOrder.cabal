@@ -98,6 +98,7 @@ library
                     , GADTs
                     , LambdaCase
                     , MultiParamTypeClasses
+                    , MultiWayIf
                     , OverloadedStrings
                     , QuasiQuotes
                     , RecordWildCards

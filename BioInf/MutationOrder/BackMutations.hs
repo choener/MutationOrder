@@ -63,23 +63,26 @@ type ScaleFunction = RNAfoldResult → RNAfoldResult → Double
 aMinDist
   ∷ Monad m
   ⇒ Double
-  -- ^ neutral element
+  -- ^ neutral element for @omin@.
   → (Double → Double → Double)
   -- ^ omin
   → (Double → Double → Double)
   -- ^ oplus
   → ScaleFunction
   -- ^ Combine two 'RNAfoldResult's into the resulting @Double@ score.
+  → Int
+  -- ^ Index position of the intermediate mutation or @(-1)@ if independent of the observed mutations.
   → HashMap Int RNAfoldResult
   -- ^ RNAs without the intermediate mutation set
   → HashMap Int RNAfoldResult
   -- ^ RNAs with the intermediate mutation set
   → SigMinDist m Double Double (BS1 First I) (Int:.From:.To) (Int:.To) (BS1 First I)
-aMinDist neutral omin oplus scaled rnas ntrs = SigMinDist
+aMinDist neutral omin oplus scaled ipos rnas ntrs = SigMinDist
   { edgB = \x (BS1 fset _) → let frna = rnas HM.! getBitSet fset
                                  trna = ntrs HM.! getBitSet fset
-                             in  x `oplus` scaled frna trna
+                             in  if | ipos < 0 → x `oplus` scaled frna trna
   -- ^ The intermediate mutation is about to be set.
+  -- TODO if @ipos >= 0@ then check if ipos is set in @fset@, otherwise set neutral score
   , edgI = \x (fset:.From f:.To t) → let frna = ntrs HM.! fset
                                          trna = ntrs HM.! (fset `setBit` f `setBit` t)
                                      in  x `oplus` scaled frna trna
@@ -117,12 +120,13 @@ type FwdUnit x = TwITbl Id Unboxed EmptyOk (Unit      I) x
 forwardMinDist
   ∷ Int
   → ScaleFunction
+  → Int
   → HashMap Int RNAfoldResult
   → HashMap Int RNAfoldResult
   → Z:.FwdBS1 Double:.FwdUnit Double:.FwdBS1 Double:.FwdBS1 Double
-forwardMinDist n scaled rnas ntrs =
+forwardMinDist n scaled ipos rnas ntrs =
   let 
-  in  mutateTablesST $ gMinDist (aMinDist 999999 min (+) scaled rnas ntrs)
+  in  mutateTablesST $ gMinDist (aMinDist 999999 min (+) scaled ipos rnas ntrs)
         (ITbl 1 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 999999 []))   -- B
         (ITbl 3 0 EmptyOk (fromAssocs Unit         Unit                           999999 []))   -- S
         (ITbl 2 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 999999 []))   -- U
@@ -141,12 +145,13 @@ forwardMinDist n scaled rnas ntrs =
 forwardEvidence
   ∷ Int
   → ScaleFunction
+  → Int
   → HashMap Int RNAfoldResult
   → HashMap Int RNAfoldResult
   → Z:.FwdBS1 Double:.FwdUnit Double:.FwdBS1 Double:.FwdBS1 Double
-forwardEvidence n scaled rnas ntrs =
+forwardEvidence n scaled ipos rnas ntrs =
   let 
-  in  mutateTablesST $ gMinDist (aMinDist 0 (+) (*) scaled rnas ntrs)
+  in  mutateTablesST $ gMinDist (aMinDist 0 (+) (*) scaled ipos rnas ntrs)
         (ITbl 1 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 0 []))   -- B
         (ITbl 3 0 EmptyOk (fromAssocs Unit         Unit                           0 []))   -- S
         (ITbl 2 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) 0 []))   -- U
