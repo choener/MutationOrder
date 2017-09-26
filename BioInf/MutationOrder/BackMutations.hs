@@ -74,19 +74,19 @@ aMinDist
   -- ^ RNAs without the intermediate mutation set
   → HashMap Int RNAfoldResult
   -- ^ RNAs with the intermediate mutation set
-  → SigMinDist m Double Double (Int:.Int) (Int:.From:.To) (Int:.To) (Int:.Int)
+  → SigMinDist m Double Double (BS1 First I) (Int:.From:.To) (Int:.To) (BS1 First I)
 aMinDist neutral omin oplus scaled rnas ntrs = SigMinDist
-  { edgB = \x (fset:.t) → let frna = rnas HM.! fset
-                              trna = ntrs HM.! fset
-                          in  x `oplus` scaled frna trna
+  { edgB = \x (BS1 fset _) → let frna = rnas HM.! getBitSet fset
+                                 trna = ntrs HM.! getBitSet fset
+                             in  x `oplus` scaled frna trna
   -- ^ The intermediate mutation is about to be set.
   , edgI = \x (fset:.From f:.To t) → let frna = ntrs HM.! fset
                                          trna = ntrs HM.! (fset `setBit` f `setBit` t)
                                      in  x `oplus` scaled frna trna
   -- ^ These are edges inserted while the intermediate mutation is active.
-  , edgU = \x (fset:.t) → let frna = ntrs HM.! fset
-                              trna = rnas HM.! fset
-                          in  x `oplus` scaled frna trna
+  , edgU = \x (BS1 fset t) → let frna = ntrs HM.! getBitSet fset
+                                 trna = rnas HM.! getBitSet fset
+                             in  x `oplus` scaled frna trna
   -- ^ Now the intermediate mutation is undone.
   , edge = \x (fset:.From f:.To t) → let frna = rnas HM.! fset
                                          trna = rnas HM.! (fset `setBit` f `setBit` t)

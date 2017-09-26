@@ -9,6 +9,7 @@ import           Control.Error
 import           Data.FileEmbed
 import qualified Data.ByteString.Char8 as BS
 import           System.Console.CmdArgs
+import           System.Directory (createDirectoryIfMissing)
 import           System.Exit (exitSuccess, exitFailure)
 import           System.FilePath
 
@@ -133,7 +134,9 @@ genSequences o = do
                               (Ancestral a) (Extant e)
     unless (numSeqs <= sequenceLimit) $ throwE $ "combinatiorial explosion (" ++ show numSeqs ++ "): reduce search space or allow for higher --sequencelimit"
     -- write out sequences
-    writeSequenceFiles (workdb </> "seqs") prefixlength seqsperfile
+    let sdb = workdb </> "sequences"
+    liftIO $ createDirectoryIfMissing True sdb
+    writeSequenceFiles sdb prefixlength seqsperfile
       $ origs ++ concatMap (\(_,_,xs) → xs) sqs
   case e of
     Left err → print err >> exitFailure

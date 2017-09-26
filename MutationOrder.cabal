@@ -123,6 +123,7 @@ executable MutationOrder
   build-depends: base
                , bytestring
                , cmdargs      >= 0.10
+               , directory
                , errors
                , file-embed   >= 0.0.8
                , filepath
