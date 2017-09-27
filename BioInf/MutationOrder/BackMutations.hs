@@ -38,11 +38,11 @@ X -> mpty <<< ε
 X -> node <<< n
 X -> edge <<< X k
 -- Insert the single intermediate mutation, followed by more known events.
-B -> edgB <<< X b
+B -> edgM <<< X b
 B -> edgI <<< B k
 -- Undo the intermediate mutation, followed by more known events.
 U -> edgU <<< B u
-U -> edge <<< U k
+U -> uedg <<< U k -- TODO to be able to deal with forcing ipos to be the first chosen edge in U
 S -> fini <<< U
 //
 Emit: MinDist
@@ -78,28 +78,47 @@ aMinDist
   -- ^ RNAs with the intermediate mutation set
   → SigMinDist m Double Double (BS1 First I) (Int:.From:.To) (Int:.To) (BS1 First I)
 aMinDist neutral omin oplus scaled ipos rnas ntrs = SigMinDist
-  { edgB = \x (BS1 fset _) → let frna = rnas HM.! getBitSet fset
+  { edgM = \x (BS1 fset b) → let frna = rnas HM.! getBitSet fset
                                  trna = ntrs HM.! getBitSet fset
-                             in  if | ipos < 0 → x `oplus` scaled frna trna
+                             -- Only allow if either the mutation does not
+                             -- influence the observed mutations or the
+                             -- influenced mutation is still available.
+                             in  if ipos < 0 || (not $ fset `testBit` ipos)
+                                  then x `oplus` scaled frna trna
+                                  else neutral
   -- ^ The intermediate mutation is about to be set.
   -- TODO if @ipos >= 0@ then check if ipos is set in @fset@, otherwise set neutral score
   , edgI = \x (fset:.From f:.To t) → let frna = ntrs HM.! fset
-                                         trna = ntrs HM.! (fset `setBit` f `setBit` t)
-                                     in  x `oplus` scaled frna trna
-  -- ^ These are edges inserted while the intermediate mutation is active.
+                                         trna = ntrs HM.! tset
+                                         tset = fset `setBit` f `setBit` t
+                                     in  if ipos < 0 || (not $ tset `testBit` ipos)
+                                          then x `oplus` scaled frna trna
+                                          else neutral
+  -- ^ These are edges inserted while the intermediate mutation is active. Only
+  -- allow intermediate mutations that do not move the @ipos@ mutation into its
+  -- final state.
   , edgU = \x (BS1 fset t) → let frna = ntrs HM.! getBitSet fset
                                  trna = rnas HM.! getBitSet fset
-                             in  x `oplus` scaled frna trna
+                             -- Only allow if either the mutation does not
+                             -- influence the observed mutations or the
+                             -- influenced mutation is 
+                             in  if ipos < 0
+                                  then x `oplus` scaled frna trna
+                                  else neutral
   -- ^ Now the intermediate mutation is undone.
+  -- TODO this needs a variant that actually switches the intermediate to the
+  -- final mutation now!
   , edge = \x (fset:.From f:.To t) → let frna = rnas HM.! fset
                                          trna = rnas HM.! (fset `setBit` f `setBit` t)
                                      in  x `oplus` scaled frna trna
   -- ^ These edges are mutational events without the influence of the
   -- intermediate mutation present.
+  -- TODO if ipos>=0 then we 
   , fini = id
   -- ^ Collapse over possible end points
   , mpty = \() → neutral
   -- ^ Not a single mutation has happened.
+  -- TODO this could reasonably be @neutral@ in @omult@, not @oplus@.
   , node = \(nset:.To n) → let frna = rnas HM.! 0
                                trna = rnas HM.! (0 `setBit` n)
                            in  scaled frna trna
