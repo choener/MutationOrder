@@ -123,6 +123,9 @@ aMinDist neutral omin oplus scaled ipos rnas ntrs = SigMinDist
                                trna = rnas HM.! (0 `setBit` n)
                            in  scaled frna trna
   -- ^ Activate a single, first mutation.
+  , uedg = \x (fset:.From f:.To t) → let
+                                     in  undefined
+  -- ^ @ipos@ points toward one of the observed mutations and as such we need to handle the transition 
   , h    = SM.foldl' omin neutral
   -- ^ Find the minimal distance from ancestral to extant sequence.
   }
