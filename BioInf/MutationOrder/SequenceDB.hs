@@ -6,10 +6,12 @@ module BioInf.MutationOrder.SequenceDB where
 
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Error
+import           Control.Monad.Except
 import           Control.Monad.IO.Class (liftIO, MonadIO)
 import           Data.ByteString.Char8 (ByteString)
 import           Data.Char (isDigit)
 import           Data.Hashable
+import           Debug.Trace
 import           GHC.Generics
 import qualified Data.Attoparsec.ByteString.Char8 as AC
 import qualified Data.Attoparsec.ByteString.Lazy as A
@@ -94,21 +96,22 @@ data RNAfoldResult = RNAfoldResult
 
 -- | Lazily read @RNAfold@ structures.
 --
--- TODO use @pipes/machines@!
--- TODO use filemanip or something like that
+-- TODO use @pipes/machines@! we need lazy reading of files and live in an exceptt transformer stack!
+-- TODO generalize transformer stack
 
 readRNAfoldFiles
   ∷ FilePath
-  → ExceptT String IO [RNAfoldResult]
+  → IO [RNAfoldResult]
 readRNAfoldFiles fp = do
   let go [] = return []
       go (f:fs) = do
-        liftIO $ print f
-        bs ← liftIO $ unsafeInterleaveIO (decompress <$> BSL.readFile f)
-        rs ← bslToRNAfoldResult bs
+        print f
+        bs ← unsafeInterleaveIO (decompress <$> BSL.readFile f)
+        let rs = either error id $ runExcept (bslToRNAfoldResult bs)
         rss ← go fs
         return $ rs ++ rss
-  liftIO (FP.find (return False) (FP.extension FP.==? ".gz")  (fp </> "structures")) >>= go
+      go ∷ [FilePath] → IO [RNAfoldResult]
+  FP.find FP.always (FP.extension FP.==? ".gz")  (fp </> "structures") >>= go
 {-# NoInline readRNAfoldFiles #-}
 
 -- |
@@ -137,13 +140,13 @@ bslToRNAfoldResult bs = do
 -- @
 
 pRNAfold ∷ A.Parser [RNAfoldResult]
-pRNAfold = A.many' go where
+pRNAfold = A.many1' go <* A.endOfInput where
   go = do
     -- 1. sequence
-    rnaFoldSequence       ← BS.copy <$> AC.takeWhile AC.isAlpha_ascii <* AC.skipSpace
+    rnaFoldSequence       ← BS.copy <$> AC.takeWhile AC.isAlpha_ascii <* AC.skipSpace A.<?> "RNAfold sequence"
     -- 2. mfe
-    rnaFoldMFEStruc       ← BS.copy <$> AC.takeTill AC.isSpace <* AC.skipSpace
-    rnaFoldMFEEner        ← AC.char '(' *> AC.skipSpace *> AC.double <* AC.char ')' <* AC.skipSpace
+    rnaFoldMFEStruc       ← BS.copy <$> AC.takeTill AC.isSpace <* AC.skipSpace A.<?> "RNAfold MFE structure"
+    rnaFoldMFEEner        ← AC.char '(' *> AC.skipSpace *> AC.double <* AC.char ')' <* AC.skipSpace A.<?> "RNAfold MFE energy"
     -- 3. ensemble
     rnaFoldEnsembleStruc  ← BS.copy <$> AC.takeTill AC.isSpace <* AC.skipSpace
     rnaFoldEnsembleEner   ← AC.char '[' *> AC.skipSpace *> AC.double <* AC.char ']' <* AC.skipSpace
@@ -152,9 +155,9 @@ pRNAfold = A.many' go where
     rnaFoldCentroidEner   ← AC.char '{' *> AC.skipSpace *> AC.double <* AC.skipSpace
     dequal                ← AC.string "d=" *> AC.double <* AC.char '}' <* AC.skipSpace
     -- 5.mfe frequency and diversity
-    AC.string " frequency of mfe structure in ensemble"
+    AC.string "frequency of mfe structure in ensemble" *> AC.skipSpace A.<?> "frequency"
     rnaFoldMfeFrequency ← AC.double
-    AC.string "; ensemble diversity"
+    AC.string "; ensemble diversity" *> AC.skipSpace
     rnaFoldDiversity ← AC.double
     AC.skipSpace
     return RNAfoldResult{..}

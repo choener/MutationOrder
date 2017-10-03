@@ -65,6 +65,7 @@ library
                , filepath
                , hashable               >= 1.2
                , log-domain             >= 0.10
+               , mtl
                , parallel               >= 3.2
                , serialize-instances    >= 0.1
                , split                  >= 0.2

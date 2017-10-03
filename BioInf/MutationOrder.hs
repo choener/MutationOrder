@@ -31,10 +31,11 @@ module BioInf.MutationOrder
 
 import           Control.Arrow (first,second)
 import           Control.Error
-import           Control.Monad (unless,forM_,when)
 import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad (unless,forM_,when)
 import           Data.Bits
 import           Data.ByteString (ByteString)
+import           Data.Char (toUpper)
 import           Data.Function (on)
 import           Data.List (groupBy,sortBy,foldl',(\\))
 import           Data.List.Split (chunksOf)
@@ -419,6 +420,8 @@ withDumpFile oH fp ancestral current l = do
 -- | This function will run a subset of the possible backmutations. In
 -- particular, only those mutations for one particular backmutation column are
 -- being used.
+--
+-- TODO less explicit transformer stack!
 
 runBackmutationVariants
   ∷ FilePath
@@ -430,27 +433,39 @@ runBackmutationVariants
   → Extant
   -- ^ The sequence to which to mutate to
   → Int
-  -- ^ The backmutation / intermediate mutation we look at
+  -- ^ The backmutation / intermediate mutation we look at. Indexed with @[1..sequence length]@.
+  -- TODO wrap in newtype that enforces this. We have some index structure saying "Start at 1".
   → ExceptT String IO ()
-runBackmutationVariants workdb alphabet ancestral extant ipos = do
+runBackmutationVariants workdb alphabet ancestral extant ipos' = do
+  let ipos = ipos' - 1
+  -- error guarding
+  unless (ipos >=0) $ throwE "ipos can not be negative"
+  unless (ipos < (BS.length $ getAncestral ancestral)) $ throwE "ipos larger than sequence length"
+  unless (BS.length (getAncestral ancestral) == BS.length (getExtant extant)) $ throwE "ancestral and extant sequence do not have equal length"
   -- Load all sequences for the original problem -- they are needed anyway
   (seqCount, origSeqs', variants) ← createRNAlandscape2 alphabet (Right [ipos]) [] ancestral extant
   let origSeqs = Trie.fromList [ (s,()) | s ← origSeqs' ]
-  origStrs ← filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> readRNAfoldFiles workdb
+  liftIO $ print workdb
+  origStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
   let rnas = error "bitset -> rnafoldresult data"
+  liftIO $ print "size of orig sequences trie"
   liftIO $ print $ Trie.size origSeqs
-  -- liftIO $ print origStrs
+  liftIO $ print $ length origStrs
   -- The @ipos@ declares how many variants we have
   forM_ (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
     let varSeqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
-    varStrs ← filter (\r → rnaFoldSequence r `Trie.member` varSeqs) <$> readRNAfoldFiles workdb
+    varStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` varSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
     let ntrs = error "bitset → rnafoldresult data"
-    liftIO $ print ""
+    liftIO $ print "variant sequences trie size and equality to orig sequences trie"
     liftIO $ print $ Trie.size varSeqs
     liftIO $ print $ origSeqs == varSeqs
     -- liftIO $ print varStrs
     return ()
   return ()
+
+rna2dna ∷ RNAfoldResult → RNAfoldResult
+rna2dna r = r { rnaFoldSequence = BS.map go $ rnaFoldSequence r } where
+  go x =let x' = toUpper x in if x' == 'U' then 'T' else x'
 
 -- | Run the intermediate / backmutation order variant. This variant is slow,
 -- and requires large pre-calculated files, we parallelize and aggregate as
