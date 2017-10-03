@@ -32,36 +32,37 @@ module BioInf.MutationOrder
 import           Control.Arrow (first,second)
 import           Control.Error
 import           Control.Monad (unless,forM_,when)
-import qualified Control.Parallel.Strategies as Par
+import           Control.Monad.IO.Class (liftIO)
 import           Data.Bits
 import           Data.ByteString (ByteString)
 import           Data.Function (on)
-import           Data.List (groupBy,sortBy,foldl')
+import           Data.List (groupBy,sortBy,foldl',(\\))
 import           Data.List.Split (chunksOf)
 import           Data.Ord (comparing)
 import           Data.Tuple (swap)
 import           Numeric.Log
+import qualified Control.Parallel.Strategies as Par
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Trie as Trie
 import qualified Data.Vector.Unboxed as VU
 import           System.Directory (doesFileExist)
 import           System.Exit (exitFailure)
 import           System.Exit (exitSuccess)
 import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle)
 import           Text.Printf
-import qualified Data.Trie as Trie
 
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
+import           Biobase.Secondary.Diagrams (d1Distance)
 import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..), getBoundary)
 import           Data.PrimitiveArray.ScoreMatrix
-import qualified Data.PrimitiveArray as PA
 import           Diagrams.TwoD.ProbabilityGrid
 import qualified Data.Bijection.HashMap as B
+import qualified Data.PrimitiveArray as PA
 import qualified ShortestPath.SHP.Edge.MinDist as SHP
-import           Biobase.Secondary.Diagrams (d1Distance)
 
 import           BioInf.MutationOrder.EdgeProb
 import           BioInf.MutationOrder.MinDist
@@ -415,13 +416,57 @@ withDumpFile oH fp ancestral current l = do
     toFileJSON fp l
     return l
 
+-- | This function will run a subset of the possible backmutations. In
+-- particular, only those mutations for one particular backmutation column are
+-- being used.
+
+runBackmutationVariants
+  ∷ FilePath
+  -- ^ where the work db lives
+  → [Char]
+  -- ^
+  → Ancestral
+  -- ^ The ancestral sequence from which we mutate away
+  → Extant
+  -- ^ The sequence to which to mutate to
+  → Int
+  -- ^ The backmutation / intermediate mutation we look at
+  → ExceptT String IO ()
+runBackmutationVariants workdb alphabet ancestral extant ipos = do
+  -- Load all sequences for the original problem -- they are needed anyway
+  (seqCount, origSeqs', variants) ← createRNAlandscape2 alphabet (Right [ipos]) [] ancestral extant
+  let origSeqs = Trie.fromList [ (s,()) | s ← origSeqs' ]
+  origStrs ← filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> readRNAfoldFiles workdb
+  let rnas = error "bitset -> rnafoldresult data"
+  liftIO $ print $ Trie.size origSeqs
+  -- liftIO $ print origStrs
+  -- The @ipos@ declares how many variants we have
+  forM_ (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
+    let varSeqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
+    varStrs ← filter (\r → rnaFoldSequence r `Trie.member` varSeqs) <$> readRNAfoldFiles workdb
+    let ntrs = error "bitset → rnafoldresult data"
+    liftIO $ print ""
+    liftIO $ print $ Trie.size varSeqs
+    liftIO $ print $ origSeqs == varSeqs
+    -- liftIO $ print varStrs
+    return ()
+  return ()
+
 -- | Run the intermediate / backmutation order variant. This variant is slow,
 -- and requires large pre-calculated files, we parallelize and aggregate as
 -- much as possible.
 --
 -- TODO read monad ?!
 
-runBackmutationVariants ∷ Int → [Char] → GlobalBackmutations → [BackmutationCol] → Ancestral → Extant → ExceptT String IO ()
+{-
+runBackmutationVariants
+  ∷ Int
+  → [Char]
+  → GlobalBackmutations
+  → [BackmutationCol]
+  → Ancestral
+  → Extant
+  → ExceptT String IO ()
 runBackmutationVariants aggregate alphabet globback backcols ancestral extant = do
   -- Load all sequences for the original problem -- they are needed anyway
   (seqCount, origSeqs', variants) ← createRNAlandscape2 alphabet globback backcols ancestral extant
@@ -448,4 +493,5 @@ runBackmutationVariants aggregate alphabet globback backcols ancestral extant = 
     return ()
   -- print each output
   return ()
+-}
 

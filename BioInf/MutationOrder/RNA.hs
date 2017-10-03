@@ -199,11 +199,11 @@ instance FromJSON Landscape where
     mutationPositions     <- v .: "mutationPositions"
     return Landscape{..}
 
-newtype Ancestral = Ancestral ByteString
+newtype Ancestral = Ancestral { getAncestral ∷ ByteString }
 
-newtype Extant = Extant ByteString
+newtype Extant = Extant { getExtant ∷ ByteString }
 
-newtype GlobalBackmutations = GlobalBackmutations Int
+newtype GlobalBackmutations = GlobalBackmutations { getGlobalBackmutations ∷ Int }
 
 newtype BackmutationCol = BackmutationCol Int
 
@@ -225,7 +225,7 @@ newtype BackmutationCol = BackmutationCol Int
 createRNAlandscape2
   ∷ (Monad m)
   ⇒ [Char]
-  → GlobalBackmutations
+  → Either GlobalBackmutations [Int]
   → [BackmutationCol]
   → Ancestral
   → Extant
@@ -233,11 +233,12 @@ createRNAlandscape2
   -- ^ Return A complex triple with (total sequence count, original problem
   -- sequences, list of global variants). The list of global variants holds for
   -- each (index,single nucleotide intermediate, list of variant sequences).
-createRNAlandscape2 alphabet (GlobalBackmutations g) bs (Ancestral a) (Extant e) = do
+createRNAlandscape2 alphabet gxorgs bs (Ancestral a) (Extant e) = do
   -- some sanity checks
   unless (BS.length a == BS.length e) $ throwE "different sequence lengths encountered"
-  -- expand later!
-  unless (g <= 1) $ throwE "we currently allow *at most* one globally active backmutation"
+  -- expand later! Right now, we either generate the 
+  unless (either ((<=1) . getGlobalBackmutations) ((<=1) . length) gxorgs)
+          $ throwE "we currently allow *at most* one globally active backmutation"
   -- TODO need to fix up interesting columns
   unless (null bs) $ throwE "fix up interesting columns"
   -- collect the possible characters for each position.
@@ -248,14 +249,15 @@ createRNAlandscape2 alphabet (GlobalBackmutations g) bs (Ancestral a) (Extant e)
   let merge x y = sort . nub $ x++y
   let hm = IM.unionWith merge (IM.unionWith merge ahm ehm) bhm
   -- global back mutations, this will introduce only those characters not already present in each column
-  let gbm = IM.fromList [ (k, alphabet \\ hm IM.! k) | k ← [0..BS.length a -1] ]
+  let gbm = IM.fromList [ (k, alphabet \\ hm IM.! k)
+                        | k ← either (\_ → [0..BS.length a -1]) id gxorgs ]
   -- begin with the set of sequences without any global backmutations
   let localList = map BS.pack . sequence . map snd . IM.toAscList
   let localCount = product . map (length . snd) $ IM.toAscList hm -- do *not* count explicitly!
   let globalModifiers = concat . map (\(k,xs) → map (k,) xs) $ IM.toAscList gbm
   -- we now repeat the local generation, but "splice in" the globally modified characters
   -- TODO we currently allow exactly one global modifier in @[(k,z)]@
-  let globals = if g == 1
+  let globals = if True -- g == 1 -- TODO need to fix up
                   then [ (k, z, [ BS.take k orig `BS.append` (BS.cons z (BS.drop (k+1) orig))
                                 | orig ← localList hm
                                 -- produce a sequence only if this mutation is
@@ -265,7 +267,7 @@ createRNAlandscape2 alphabet (GlobalBackmutations g) bs (Ancestral a) (Extant e)
                                 , (a `BS.index` k == e `BS.index` k) || (a `BS.index` k == orig `BS.index` k)  ] )
                        | (k,z) ← globalModifiers ]
                   else []
-  let globalCount = if g == 1 then localCount * length globalModifiers else 0
+  let globalCount = localCount * length globalModifiers -- if g == 1 then localCount * length globalModifiers else 0
   return $ (localCount + globalCount, localList hm, globals)
 
 -- |

@@ -19,6 +19,7 @@ import qualified Data.Char as C
 import           System.Directory (doesFileExist, getDirectoryContents)
 import           System.FilePath ((</>), (<.>))
 import           System.IO.Unsafe (unsafeInterleaveIO)
+import qualified System.FilePath.Find as FP
 
 
 
@@ -102,11 +103,12 @@ readRNAfoldFiles
 readRNAfoldFiles fp = do
   let go [] = return []
       go (f:fs) = do
+        liftIO $ print f
         bs ← liftIO $ unsafeInterleaveIO (decompress <$> BSL.readFile f)
         rs ← bslToRNAfoldResult bs
         rss ← go fs
         return $ rs ++ rss
-  liftIO (getDirectoryContents fp) >>= go
+  liftIO (FP.find (return False) (FP.extension FP.==? ".gz")  (fp </> "structures")) >>= go
 {-# NoInline readRNAfoldFiles #-}
 
 -- |

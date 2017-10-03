@@ -69,6 +69,18 @@ data Options
     , alphabet ∷ String
     -- ^ the different characters that are allowed
     }
+  | Backmutation
+    { ancestralSequence ∷ FilePath
+    -- ^ the (presumably) ancestral sequence from which to start the mutation
+    -- order prediction.
+    , extantSequence ∷ FilePath
+    -- ^ the extant or target sequence to which to mutate.
+    , workdb ∷ FilePath
+    -- ^
+    , position ∷ Int
+    -- ^
+    , alphabet ∷ String
+    }
   deriving (Show,Data,Typeable)
 
 oMutationOrder = MutationOrder
@@ -101,12 +113,21 @@ oGenSequences = GenSequences
   , alphabet = ""
   }
 
+oBackmutation = Backmutation
+  { ancestralSequence = def
+  , extantSequence = def
+  , workdb = def
+  , position = -1
+  , alphabet = ""
+  }
+
 main :: IO ()
 main = do
-  o <- cmdArgs $ modes [oMutationOrder &= auto, oGenSequences] &= verbosity
+  o <- cmdArgs $ modes [oMutationOrder &= auto, oGenSequences, oBackmutation] &= verbosity
   case o of
-    MutationOrder{} -> mainProgram o
-    GenSequences{} -> genSequences o
+    MutationOrder{} → mainProgram o
+    GenSequences{}  → genSequences o
+    Backmutation{}  → runBackmutation o
 
 -- | This is a simple wrapper around the RNA landscape creation. Landscape
 -- creation generates all sequences between ancestral and extant sequence. It
@@ -129,7 +150,7 @@ genSequences o = do
     e ← liftIO $ stupidReader extantSequence
     (numSeqs, origs, sqs) ← createRNAlandscape2
                               alphabet
-                              (GlobalBackmutations globalbackmutations)
+                              (Left $ GlobalBackmutations globalbackmutations)
                               (map BackmutationCol backmutationcolumns)
                               (Ancestral a) (Extant e)
     unless (numSeqs <= sequenceLimit) $ throwE $ "combinatiorial explosion (" ++ show numSeqs ++ "): reduce search space or allow for higher --sequencelimit"
@@ -179,4 +200,19 @@ mainProgram oOptions = do
                              PairDistMfe -> basepairDistanceMFE
                              PairDistCen -> basepairDistanceCentroid)
   runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint lkupfile outprefix workdb temperature equalStart infiles
+
+runBackmutation ∷ Options → IO ()
+runBackmutation Backmutation{..} = do
+  e ← runExceptT $ do
+    when (null ancestralSequence) $ throwE "ancestral sequence file?"
+    when (null extantSequence) $ throwE "extant sequence file?"
+    when (null workdb) $ throwE "work db directory?"
+    when (null alphabet) $ throwE "use --alphabet=ACGT (or ACGU if your fasta files are RNA-based)"
+    a ← liftIO $ Ancestral <$> stupidReader ancestralSequence
+    e ← liftIO $ Extant    <$> stupidReader extantSequence
+    runBackmutationVariants workdb alphabet a e position
+  case e of
+    Left err → print (err ∷ String) >> exitFailure
+    Right () → return ()
+  return ()
 
