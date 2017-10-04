@@ -472,14 +472,24 @@ runBackmutationVariants workdb alphabet ancestral extant ipos' = do
                                 rnas
                                 ntrs
     liftIO $ print $ BM.forwardMinDistValue fmd
+    let evi = BM.forwardEvidence numMuts
+                                 (partfun' mfeDelta')
+                                 iposbitset
+                                 rnas
+                                 ntrs
+    liftIO $ print $ BM.forwardEvidenceValue evi
     return ()
   return ()
 
-mfeDelta' :: BM.ScaleFunction
+mfeDelta' :: BM.ScaleFunction Double
 mfeDelta' frna trna = t - f -- traceShow (f, "->", t) $ t - f
   where t = rnaFoldMFEEner trna
         f = rnaFoldMFEEner frna
 {-# Inlinable mfeDelta' #-}
+
+partfun' ∷ BM.ScaleFunction Double → BM.ScaleFunction (Log Double)
+partfun' f frna trna = Exp . negate $ f frna trna
+{-# Inlineable partfun' #-}
 
 rna2dna ∷ RNAfoldResult → RNAfoldResult
 rna2dna r = r { rnaFoldSequence = BS.map go $ rnaFoldSequence r } where

@@ -11,6 +11,7 @@ import           Data.Bits
 import           Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Vector.Fusion.Stream.Monadic as SM
+import           Numeric.Log
 
 import           Data.PrimitiveArray hiding (toList,map)
 import           FormalLanguage
@@ -53,7 +54,7 @@ makeAlgebraProduct ''SigMinDist
 
 
 
-type ScaleFunction = RNAfoldResult → RNAfoldResult → Double
+type ScaleFunction d = RNAfoldResult → RNAfoldResult → d
 
 -- | Minimal distance calculation under the influence of one intermediate
 -- mutation.
@@ -63,14 +64,14 @@ type ScaleFunction = RNAfoldResult → RNAfoldResult → Double
 
 aMinDist
   ∷ Monad m
-  ⇒ Double
+  ⇒ d
   -- ^ neutral element for @omin@.
-  → (Double → Double → Double)
+  → (d → d → d)
   -- ^ omin
-  → (Double → Double → Double)
+  → (d → d → d)
   -- ^ oplus
-  → ScaleFunction
-  -- ^ Combine two 'RNAfoldResult's into the resulting @Double@ score.
+  → ScaleFunction d
+  -- ^ Combine two 'RNAfoldResult's into the resulting @d@ score.
   → Int
   -- ^ Index position of the intermediate mutation or @(-1)@ if independent of the observed mutations.
   -- TODO IN COORDINATES OF THE BITSET SPACE!
@@ -78,7 +79,7 @@ aMinDist
   -- ^ RNAs without the intermediate mutation set
   → HashMap Int RNAfoldResult
   -- ^ RNAs with the intermediate mutation set
-  → SigMinDist m Double Double (Int:.From:.To) (Int:.To) (BS1 First I)
+  → SigMinDist m d d (Int:.From:.To) (Int:.To) (BS1 First I)
 aMinDist neutral omin oplus scaled ipos rnas ntrs = SigMinDist
   { beginEmpty = \() → neutral
   -- ^ Not a single mutation has happened.
@@ -156,7 +157,7 @@ type FwdUnit x = TwITbl Id Unboxed EmptyOk (Unit      I) x
 
 forwardMinDist
   ∷ Int
-  → ScaleFunction
+  → ScaleFunction Double
   → Int
   → HashMap Int RNAfoldResult
   → HashMap Int RNAfoldResult
@@ -184,11 +185,11 @@ forwardMinDistValue fwd = md
 
 forwardEvidence
   ∷ Int
-  → ScaleFunction
+  → ScaleFunction (Log Double)
   → Int
   → HashMap Int RNAfoldResult
   → HashMap Int RNAfoldResult
-  → Z:.FwdBS1 Double:.FwdBS1 Double:.FwdBS1 Double:.FwdUnit Double
+  → Z:.FwdBS1 (Log Double):.FwdBS1 (Log Double):.FwdBS1 (Log Double):.FwdUnit (Log Double)
 forwardEvidence n scaled ipos rnas ntrs =
   let 
   in  mutateTablesST $ gMinDist (aMinDist 0 (+) (*) scaled ipos rnas ntrs)
@@ -200,6 +201,10 @@ forwardEvidence n scaled ipos rnas ntrs =
         Singleton     -- first mutational event
         (PeekIndex ∷ PeekIndex (BS1 First I))     -- undo intermediate
 {-# NoInline forwardEvidence #-}
+
+forwardEvidenceValue fwd = md
+  where (Z:.fwdB:.fwdF:.fwdI:.fwdS) = fwd
+        TW (ITbl _ _ _ md) _ = fwdS
 
 
 
