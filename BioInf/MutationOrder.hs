@@ -32,7 +32,7 @@ module BioInf.MutationOrder
 import           Control.Arrow (first,second)
 import           Control.Error
 import           Control.Monad.IO.Class (liftIO)
-import           Control.Monad (unless,forM_,when)
+import           Control.Monad (unless,forM_,when,forM)
 import           Control.Lens
 import           Data.ByteString.Strict.Lens
 import           Data.Bits
@@ -43,6 +43,7 @@ import           Data.List (groupBy,sortBy,foldl',(\\),sort)
 import           Data.List.Split (chunksOf)
 import           Data.Ord (comparing)
 import           Data.Tuple (swap)
+import           Debug.Trace
 import           Numeric.Log
 import qualified Control.Parallel.Strategies as Par
 import qualified Data.ByteString.Char8 as BS
@@ -449,25 +450,36 @@ runBackmutationVariants workdb alphabet ancestral extant ipos' = do
   -- TODO i think @origSeqs'@ does not hold the original sequences, need to check tonight
   (seqCount, origSeqs', variants) ← createRNAlandscape2 alphabet (Right [ipos]) [] ancestral extant
   let origSeqs = Trie.fromList [ (s,()) | s ← origSeqs' ]
+  varSeqs ← forM (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
+    let vsqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
+    return (v, vsqs)
   liftIO $ print workdb
   -- TODO do only a single pass over the data
-  origStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
-  let rnas = genSet ancestral extant Nothing origStrs
-  liftIO $ print "size of orig sequences trie"
-  liftIO $ print $ Trie.size origSeqs
-  liftIO $ print $ length origStrs
-  liftIO $ print rnas
+  -- origStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
+  allStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs
+                                  || or [rnaFoldSequence r `Trie.member` vs | (_,vs) ← varSeqs] )
+          <$> map rna2dna <$> readRNAfoldFiles workdb
+  let (rnas,_,_) = genSet ancestral extant Nothing allStrs
   -- The @ipos@ declares how many variants we have
   forM_ (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
     let varSeqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
     varStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` varSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
-    let ntrs = error "bitset → rnafoldresult data"
-    liftIO $ print "variant sequences trie size and equality to orig sequences trie"
-    liftIO $ print $ Trie.size varSeqs
-    liftIO $ print $ origSeqs == varSeqs
-    -- liftIO $ print varStrs
+    let (ntrs,iposbitset,numMuts) = genSet ancestral extant (Just (ipos,v)) allStrs
+    --liftIO $ print (numMuts, iposbitset, rnas, ntrs, HM.size rnas, HM.size ntrs)
+    let fmd = BM.forwardMinDist numMuts
+                                mfeDelta'
+                                iposbitset
+                                rnas
+                                ntrs
+    liftIO $ print $ BM.forwardMinDistValue fmd
     return ()
   return ()
+
+mfeDelta' :: BM.ScaleFunction
+mfeDelta' frna trna = t - f -- traceShow (f, "->", t) $ t - f
+  where t = rnaFoldMFEEner trna
+        f = rnaFoldMFEEner frna
+{-# Inlinable mfeDelta' #-}
 
 rna2dna ∷ RNAfoldResult → RNAfoldResult
 rna2dna r = r { rnaFoldSequence = BS.map go $ rnaFoldSequence r } where
@@ -488,10 +500,10 @@ genSet
   -- ^ If @Just@ then the 0-based position and character of the intermediate
   -- mutation.
   → [RNAfoldResult]
-  → HM.HashMap Int RNAfoldResult
-genSet (Ancestral a') (Extant e') v xs = HM.fromList kv
+  → (HM.HashMap Int RNAfoldResult, Int, Int)
+genSet (Ancestral a') (Extant e') v xs = (HM.fromList kv, ipos, B.size posbit)
   where kv = [ (b, maybe (kvErr b) id $ HM.lookup (pat2str b) lkupRes) | b ← bits ]
-        kvErr b = error $ show (b, bits, pat2str b, lkupRes, sort $ map rnaFoldSequence xs)
+        kvErr b = error $ show (lkupRes, sort $ map rnaFoldSequence xs, v, posbit, b, bits, pat2str b)
         -- update a/e based on if we have the intermediate mutation set up.
         a = maybe a' (\(i,c) → unpackedChars.ix i .~ c $ a') v
         e = maybe e' (\(i,c) → unpackedChars.ix i .~ c $ e') v
@@ -503,16 +515,19 @@ genSet (Ancestral a') (Extant e') v xs = HM.fromList kv
         posbit ∷ B.BimapHashMap Int Int
         posbit = B.fromList $ zip (ks^..traverse._1) [0∷Int ..]
         -- all bit patterns
-        bits = [0 .. B.size posbit - 1]
+        bits = [0 .. 2^B.size posbit - 1]
         -- convert a bit pattern to an actual string, to be looked up. Start
         -- with the ancestral sequence and for each @1@, modify the character
         -- into the one encountered in the extant sequence.
         pat2str ∷ Int → ByteString
-        pat2str = let go s k = unpackedChars.ix k .~ (e `BS.index` lk k) $ s
-                      lk k = maybe (error "lk") id $ B.lookupR posbit k
+        pat2str = let go s k = unpackedChars.ix (lk k) .~ (e `BS.index` lk k) $ s
+                      lk = maybe (error "lk") id . B.lookupR posbit
                   in  foldl' go a . activeBitsL
         -- lookup from sequence to RNAfoldResult
         lkupRes = HM.fromList [ (rnaFoldSequence x,x) | x ← xs ]
+        -- is the global mutation intermediate? Yes: then >= 0 is the bitset
+        -- element to be returned here
+        ipos = maybe (-1) (\(z,_) → maybe (-1) id $ B.lookupL posbit z) v
 
 -- | Run the intermediate / backmutation order variant. This variant is slow,
 -- and requires large pre-calculated files, we parallelize and aggregate as

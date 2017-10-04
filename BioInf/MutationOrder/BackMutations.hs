@@ -73,6 +73,7 @@ aMinDist
   -- ^ Combine two 'RNAfoldResult's into the resulting @Double@ score.
   → Int
   -- ^ Index position of the intermediate mutation or @(-1)@ if independent of the observed mutations.
+  -- TODO IN COORDINATES OF THE BITSET SPACE!
   → HashMap Int RNAfoldResult
   -- ^ RNAs without the intermediate mutation set
   → HashMap Int RNAfoldResult
@@ -171,6 +172,10 @@ forwardMinDist n scaled ipos rnas ntrs =
         Singleton     -- first mutational event
         (PeekIndex ∷ PeekIndex (BS1 First I))     -- undo intermediate
 {-# NoInline forwardMinDist #-}
+
+forwardMinDistValue fwd = md
+  where (Z:.fwdB:.fwdF:.fwdI:.fwdS) = fwd
+        TW (ITbl _ _ _ md) _ = fwdS
 
 -- |
 --
