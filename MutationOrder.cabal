@@ -64,6 +64,7 @@ library
                , filemanip              >= 0.3
                , filepath
                , hashable               >= 1.2
+               , lens                   >= 4.0
                , log-domain             >= 0.10
                , mtl
                , parallel               >= 3.2
@@ -81,6 +82,7 @@ library
                , BiobaseXNA             == 0.9.3.*
                , DPutils                == 0.0.1.*
                , FormalGrammars         == 0.3.1.*
+               , OrderedBits            == 0.0.1.*
                , PrimitiveArray         == 0.8.0.*
                , PrimitiveArray-Pretty  == 0.0.0.*
                , ShortestPathProblems   == 0.0.0.*
