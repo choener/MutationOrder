@@ -105,8 +105,7 @@ readRNAfoldFiles
 readRNAfoldFiles fp = do
   let go [] = return []
       go (f:fs) = do
-        print f
-        bs ← unsafeInterleaveIO (decompress <$> BSL.readFile f)
+        bs ← unsafeInterleaveIO (putStrLn ("#" ++ f) >> decompress <$> BSL.readFile f)
         let rs = either error id $ runExcept (bslToRNAfoldResult bs)
         rss ← go fs
         return $ rs ++ rss

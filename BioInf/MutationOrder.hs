@@ -454,7 +454,7 @@ runBackmutationVariants scaleFun workdb alphabet ancestral extant ipos' = do
   varSeqs ← forM (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
     let vsqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
     return (v, vsqs)
-  liftIO $ print workdb
+  -- liftIO $ print workdb
   -- TODO do only a single pass over the data
   -- origStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
   allStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs
