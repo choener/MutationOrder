@@ -80,6 +80,9 @@ data Options
     , position ∷ Int
     -- ^
     , alphabet ∷ String
+    , scoretype     :: ScoreType
+    , positivesquared :: Bool
+    , onlypositive  :: Bool
     }
   deriving (Show,Data,Typeable)
 
@@ -119,6 +122,9 @@ oBackmutation = Backmutation
   , workdb = def
   , position = -1
   , alphabet = ""
+  , scoretype     = Centroid &= help "choose 'mfe', 'centroid', 'pairdistmfe', or 'pairdistcen' for the evaluation of each mutational step"
+  , positivesquared = False &= help "square positive energies to penalize worse structures"
+  , onlypositive  = True &= help "minimize only over penalties, not energy gains"
   }
 
 main :: IO ()
@@ -210,7 +216,10 @@ runBackmutation Backmutation{..} = do
     when (null alphabet) $ throwE "use --alphabet=ACGT (or ACGU if your fasta files are RNA-based)"
     a ← liftIO $ Ancestral <$> stupidReader ancestralSequence
     e ← liftIO $ Extant    <$> stupidReader extantSequence
-    runBackmutationVariants workdb alphabet a e position
+    let scaleFun = case scoretype of
+                      Centroid → centroidDelta' onlypositive positivesquared
+                      Mfe → mfeDelta' onlypositive positivesquared
+    runBackmutationVariants scaleFun workdb alphabet a e position
   case e of
     Left err → print (err ∷ String) >> exitFailure
     Right () → return ()

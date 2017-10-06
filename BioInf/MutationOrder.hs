@@ -428,7 +428,8 @@ withDumpFile oH fp ancestral current l = do
 -- TODO less explicit transformer stack!
 
 runBackmutationVariants
-  ∷ FilePath
+  ∷ BM.ScaleFunction Double
+  → FilePath
   -- ^ where the work db lives
   → [Char]
   -- ^
@@ -440,7 +441,7 @@ runBackmutationVariants
   -- ^ The backmutation / intermediate mutation we look at. Indexed with @[1..sequence length]@.
   -- TODO wrap in newtype that enforces this. We have some index structure saying "Start at 1".
   → ExceptT String IO ()
-runBackmutationVariants workdb alphabet ancestral extant ipos' = do
+runBackmutationVariants scaleFun workdb alphabet ancestral extant ipos' = do
   let ipos = ipos' - 1
   -- error guarding
   unless (ipos >=0) $ throwE "ipos can not be negative"
@@ -459,33 +460,50 @@ runBackmutationVariants workdb alphabet ancestral extant ipos' = do
   allStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs
                                   || or [rnaFoldSequence r `Trie.member` vs | (_,vs) ← varSeqs] )
           <$> map rna2dna <$> readRNAfoldFiles workdb
-  let (rnas,_,_) = genSet ancestral extant Nothing allStrs
+  let (rnas,_,_,_) = genSet ancestral extant Nothing allStrs
   -- The @ipos@ declares how many variants we have
   forM_ (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
     let varSeqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
     varStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` varSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
-    let (ntrs,iposbitset,numMuts) = genSet ancestral extant (Just (ipos,v)) allStrs
+    let (ntrs,iposbitset,numMuts,mutpos) = genSet ancestral extant (Just (ipos,v)) allStrs
     --liftIO $ print (numMuts, iposbitset, rnas, ntrs, HM.size rnas, HM.size ntrs)
     let fmd = BM.forwardMinDist numMuts
-                                mfeDelta'
+                                scaleFun
                                 iposbitset
                                 rnas
                                 ntrs
-    liftIO $ print $ BM.forwardMinDistValue fmd
+    let bts = BM.backtrackMinDist1 numMuts
+                                   scaleFun
+                                   iposbitset
+                                   ipos'
+                                   rnas
+                                   ntrs
+                                   mutpos
+                                   fmd
     let evi = BM.forwardEvidence numMuts
-                                 (partfun' mfeDelta')
+                                 (partfun' scaleFun)
                                  iposbitset
                                  rnas
                                  ntrs
-    liftIO $ print $ BM.forwardEvidenceValue evi
+    liftIO $ printf "Unobserved Mutation:   Position %3d Nucleotide %c   Delta: %5.1f   lnZ: %10.2f\n"
+              ipos' v
+              (BM.forwardMinDistValue fmd)
+              (ln $ BM.forwardEvidenceValue evi)
+    liftIO $ mapM_ T.putStrLn $ take 1 bts
     return ()
   return ()
 
-mfeDelta' :: BM.ScaleFunction Double
-mfeDelta' frna trna = t - f -- traceShow (f, "->", t) $ t - f
+mfeDelta' :: Bool → Bool → BM.ScaleFunction Double
+mfeDelta' mx sq frna trna = (if sq then (\z → if z > 0 then z^2 else z) else id) . (if mx then max 0 else id) $ t - f
   where t = rnaFoldMFEEner trna
         f = rnaFoldMFEEner frna
 {-# Inlinable mfeDelta' #-}
+
+centroidDelta' :: Bool → Bool → BM.ScaleFunction Double
+centroidDelta' mx sq frna trna = (if sq then (\z → if z > 0 then z^2 else z) else id) . (if mx then max 0 else id) $ t - f
+  where t = rnaFoldCentroidEner trna
+        f = rnaFoldCentroidEner frna
+{-# Inlinable centroidDelta' #-}
 
 partfun' ∷ BM.ScaleFunction Double → BM.ScaleFunction (Log Double)
 partfun' f frna trna = Exp . negate $ f frna trna
@@ -510,8 +528,8 @@ genSet
   -- ^ If @Just@ then the 0-based position and character of the intermediate
   -- mutation.
   → [RNAfoldResult]
-  → (HM.HashMap Int RNAfoldResult, Int, Int)
-genSet (Ancestral a') (Extant e') v xs = (HM.fromList kv, ipos, B.size posbit)
+  → (HM.HashMap Int RNAfoldResult, Int, Int, B.BimapHashMap Int Int)
+genSet (Ancestral a') (Extant e') v xs = (HM.fromList kv, ipos, B.size posbit, posbit)
   where kv = [ (b, maybe (kvErr b) id $ HM.lookup (pat2str b) lkupRes) | b ← bits ]
         kvErr b = error $ show (lkupRes, sort $ map rnaFoldSequence xs, v, posbit, b, bits, pat2str b)
         -- update a/e based on if we have the intermediate mutation set up.
@@ -519,7 +537,7 @@ genSet (Ancestral a') (Extant e') v xs = (HM.fromList kv, ipos, B.size posbit)
         e = maybe e' (\(i,c) → unpackedChars.ix i .~ c $ e') v
         -- all positions where the two bytestrings differ, together with the
         -- differing characters
-        ks = filter (\(_,i,j) → i/=j) $ zip3 [0∷Int ..] (BS.unpack a) (BS.unpack e)
+        ks = filter (\(_,i,j) → i/=j) $ zip3 [0∷Int ..] (BS.unpack a') (BS.unpack e')
         -- turn into a bijection of actual position (first) and bit in bitset
         -- (second)
         posbit ∷ B.BimapHashMap Int Int
@@ -537,7 +555,7 @@ genSet (Ancestral a') (Extant e') v xs = (HM.fromList kv, ipos, B.size posbit)
         lkupRes = HM.fromList [ (rnaFoldSequence x,x) | x ← xs ]
         -- is the global mutation intermediate? Yes: then >= 0 is the bitset
         -- element to be returned here
-        ipos = maybe (-1) (\(z,_) → maybe (-1) id $ B.lookupL posbit z) v
+        ipos = maybe (-1) (\(z,_) → if BS.index a' z /= BS.index e' z then (maybe (error "ipos") id $ B.lookupL posbit z) else -1) v
 
 -- | Run the intermediate / backmutation order variant. This variant is slow,
 -- and requires large pre-calculated files, we parallelize and aggregate as
