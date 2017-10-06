@@ -87,7 +87,7 @@ aMinDist
   -- ^ RNAs without the intermediate mutation set
   → HashMap Int RNAfoldResult
   -- ^ RNAs with the intermediate mutation set
-  → SigMinDist m d d (Int:.From:.To) (Int:.To) (BS1 First I)
+  → SigMinDist m d d (Int:.From:.To) (Int:.To) (BS1 Last I)
 aMinDist neutral omin oplus scaled ipos rnas ntrs = SigMinDist
   { beginEmpty = \() → neutral
   -- ^ Not a single mutation has happened.
@@ -128,7 +128,7 @@ aMinDist neutral omin oplus scaled ipos rnas ntrs = SigMinDist
   , finalFromInter = \x (fset:.From f:.To t) → let frna = ntrs HM.! fset
                                                    trna = rnas HM.! tset
                                                    tset = fset `setBit` f `setBit` t
-                                               in  if ipos == f
+                                               in  if ipos == t
                                                      then x `oplus` scaled frna trna
                                                      else neutral
   -- ^ Flips the intermediate mutation (@ipos >= 0@) into the final state.
@@ -173,38 +173,40 @@ aPretty
   -- ^ intermediate rnas
   → B.BimapHashMap Int Int
   -- ^ actual mutation position / bit in bitset
-  → SigMinDist m Text [Text] (Int:.From:.To) (Int:.To) (BS1 First I)
+  → SigMinDist m Text [Text] (Int:.From:.To) (Int:.To) (BS1 Last I)
 aPretty scaled ipos realPos rnas ntrs mutpos = SigMinDist
   { beginEmpty = \() → ""
   , beginNode = \(nset:.To n) → let frna = rnas HM.! 0
                                     trna = rnas HM.! (0 `setBit` n)
                                 in  if ipos < 0 || n /= ipos
-                                      then T.concat [showHdr frna, showMut frna trna n]
-                                      else "BEGINNODE ERROR\n"
+                                      then T.concat [showHdr "Ancestral" frna, showMut "1st Mutation" frna trna n]
+                                      else ""
   -- ^ Activate a single, first mutation.
   , beginEdge = \x (fset:.From f:.To t) → let frna = rnas HM.! fset
-                                              trna = rnas HM.! (fset `setBit` f `setBit` t)
-                                          in  if ipos < 0 || ipos /= f
-                                                then T.concat [x, showMut frna trna f]
-                                                else "BEGINEDGE ERROR\n"
+                                              trna = rnas HM.! tset
+                                              tset = fset `setBit` f `setBit` t
+                                          in  if ipos < 0 || ipos /= t
+                                                then T.concat [x, showMut "Edge (Pre)" frna trna t]
+                                                else ""
   -- ^ These edges are mutational events without the influence of the
   -- intermediate mutation present.
   , interFromBegin = \x (BS1 fset b) → let frna = rnas HM.! getBitSet fset
                                            trna = ntrs HM.! getBitSet fset
+                                           imorbm = if ipos < 0 then "Activate BM" else "Activate IM"
                                        -- Only allow if either the mutation does not
                                        -- influence the observed mutations or the
                                        -- influenced mutation is still available.
                                        in  if ipos < 0 || (not $ fset `testBit` ipos)
-                                            then T.concat [x, showBackmut frna trna realPos]
-                                            else "INTERFROMBEGIN ERROR\n"
+                                            then T.concat [x, showBackmut imorbm frna trna realPos]
+                                            else ""
   -- ^ The intermediate mutation is about to be set. Only if @ipos@ is
   -- independent of the other mutational events or we have not tried activating it.
   , interEdge = \x (fset:.From f:.To t) → let frna = ntrs HM.! fset
                                               trna = ntrs HM.! tset
                                               tset = fset `setBit` f `setBit` t
                                           in  if ipos < 0 || (not $ tset `testBit` ipos)
-                                                then T.concat [x, showMut frna trna f]
-                                                else "INTEREDGE ERROR\n"
+                                                then T.concat [x, showMut "Edge (Active)" frna trna t]
+                                                else ""
   -- ^ These are edges inserted while the intermediate mutation is active. Only
   -- allow intermediate mutations that do not move the @ipos@ mutation into its
   -- final state.
@@ -212,9 +214,9 @@ aPretty scaled ipos realPos rnas ntrs mutpos = SigMinDist
   , finalFromInter = \x (fset:.From f:.To t) → let frna = ntrs HM.! fset
                                                    trna = rnas HM.! tset
                                                    tset = fset `setBit` f `setBit` t
-                                               in  if ipos == f
-                                                     then T.concat [x, showUnBackmut frna trna realPos] -- , T.pack (show (ipos,BitSet fset,BitSet tset,f,t)), "\n"]
-                                                     else "FINALFROMINTER ERROR\n"
+                                               in  if ipos == t
+                                                     then T.concat [x, showUnBackmut "Deactivate IM" frna trna realPos]
+                                                     else ""
   -- ^ Flips the intermediate mutation (@ipos >= 0@) into the final state.
   -- TODO check if @t@ is the one being set
   , finalUnBackmut = \x (BS1 fset t) → let frna = ntrs HM.! getBitSet fset
@@ -223,73 +225,87 @@ aPretty scaled ipos realPos rnas ntrs mutpos = SigMinDist
                                        -- influence the observed mutations or the
                                        -- influenced mutation is 
                                        in  if ipos < 0
-                                            then T.concat [x, showUnBackmut frna trna realPos]
-                                            else "FINALUNBACKMUT ERROR\n"
+                                            then T.concat [x, showUnBackmut "Deactivate BM" frna trna realPos]
+                                            else ""
   -- ^ Now the intermediate mutation is undone. Is only used if @ipos@ is
   -- independent (@==(-1)@) of the observed events.
   , finalEdge = \x (fset:.From f:.To t) → let frna = rnas HM.! fset
                                               trna = rnas HM.! tset
                                               tset = fset `setBit` f `setBit` t
                                           in  if ipos < 0 || (fset `testBit` ipos)
-                                                then T.concat [x, showMut frna trna f]
-                                                else "FINALEDGE ERROR\n"
+                                                then T.concat [x, showMut "Edge (Post)" frna trna t]
+                                                else ""
   , finis = id
   -- ^ Collapse over possible end points
-  , h = SM.toList
+  , h = SM.toList . SM.filter (not . T.null)
   -- ^ Find the minimal distance from ancestral to extant sequence.
   } where
       muts = let as = VU.generate n (const ' ')
                  n  = BS.length $ rnaFoldSequence $ rnas HM.! 0
-                 bs = as VU.// [ (k*10, C.chr $ C.ord '0' + k `mod` 10) | k ← [1 .. n `div` 10] ]
+                 bs = as VU.// [ (k*10 - 1, C.chr $ C.ord '0' + k `mod` 10) | k ← [1 .. n `div` 10] ]
                  cs = bs VU.// [ (k, 'v') | (k,_) ← B.toList mutpos ]
                  ds = cs VU.// [ if ipos < 0 then (realPos-1,'!') else (realPos-1,'+') ]
              in  VU.toList ds -- ++ show (ipos,realPos)
-      showHdr ∷ RNAfoldResult → Text
-      showHdr frna = T.pack $ printf "%s\n            %s\n%5.1f       %s\n%5.1f       %s\n"
-                                (replicate 12 ' ' ++ muts)
-                                (BS.unpack $ rnaFoldSequence frna)
-                                (rnaFoldMFEEner frna)
-                                (BS.unpack $ rnaFoldMFEStruc frna)
-                                (rnaFoldCentroidEner frna)
-                                (BS.unpack $ rnaFoldCentroidStruc frna)
-      showMut ∷ RNAfoldResult → RNAfoldResult → Int → Text
-      showMut frna trna p = T.pack $ printf "%5d %5.1f %s\n%s%s\n%s%s\n"
+      showHdr ∷ String → RNAfoldResult → Text
+      showHdr what frna = T.pack $ printf "%s\n%s%s   %s\n%s%s %5.1f\n%s%s %5.1f\n"
+                                (spaces ++ muts)
+                                 spaces
+                                 (BS.unpack $ rnaFoldSequence frna)
+                                 what
+                                  spaces
+                                  (BS.unpack $ rnaFoldMFEStruc frna)
+                                  (rnaFoldMFEEner frna)
+                                   spaces
+                                   (BS.unpack $ rnaFoldCentroidStruc frna)
+                                   (rnaFoldCentroidEner frna)
+      showMut ∷ String → RNAfoldResult → RNAfoldResult → Int → Text
+      showMut what frna trna p = T.pack $ printf "%5d %5.1f %s   %s\n%s%s %5.1f\n%s%s %5.1f\n"
                                         (maybe (error $ "showMut" ++ show p) (+1) $ B.lookupR mutpos p)
                                         (deltaE frna trna)
                                         (BS.unpack $ rnaFoldSequence trna)
-                                        (replicate 12 ' ')
-                                        (BS.unpack $ rnaFoldMFEStruc trna)
-                                        (replicate 12 ' ')
-                                        (BS.unpack $ rnaFoldCentroidStruc trna)
-      showBackmut ∷ RNAfoldResult → RNAfoldResult → Int → Text
-      showBackmut frna trna p = T.pack $ printf "%c %3d %5.1f %s\n%s%s\n%s%s\n"
+                                        what
+                                         spaces
+                                         (BS.unpack $ rnaFoldMFEStruc trna)
+                                         (rnaFoldMFEEner trna)
+                                          spaces
+                                          (BS.unpack $ rnaFoldCentroidStruc trna)
+                                          (rnaFoldCentroidEner trna)
+      showBackmut ∷ String → RNAfoldResult → RNAfoldResult → Int → Text
+      showBackmut what frna trna p = T.pack $ printf "%c %3d %5.1f %s   %s\n%s%s %5.1f\n%s%s %5.1f\n"
                                         (if ipos < 0 then '!' else '+')
                                         p
                                         (deltaE frna trna)
                                         (BS.unpack $ rnaFoldSequence trna)
-                                        (replicate 12 ' ')
-                                        (BS.unpack $ rnaFoldMFEStruc trna)
-                                        (replicate 12 ' ')
-                                        (BS.unpack $ rnaFoldCentroidStruc trna)
-      showUnBackmut ∷ RNAfoldResult → RNAfoldResult → Int → Text
-      showUnBackmut frna trna p = T.pack $ printf "%c %3d %5.1f %s\n%s%s\n%s%s\n"
+                                        what
+                                         spaces
+                                         (BS.unpack $ rnaFoldMFEStruc trna)
+                                         (rnaFoldMFEEner trna)
+                                          spaces
+                                          (BS.unpack $ rnaFoldCentroidStruc trna)
+                                          (rnaFoldCentroidEner trna)
+      showUnBackmut ∷ String → RNAfoldResult → RNAfoldResult → Int → Text
+      showUnBackmut what frna trna p = T.pack $ printf "%c %3d %5.1f %s   %s\n%s%s %5.1f\n%s%s %5.1f\n"
                                              (if ipos < 0 then '!' else '+')
                                              p
                                              (deltaE frna trna)
                                              (BS.unpack $ rnaFoldSequence trna)
-                                             (replicate 12 ' ')
-                                             (BS.unpack $ rnaFoldMFEStruc trna)
-                                             (replicate 12 ' ')
-                                             (BS.unpack $ rnaFoldCentroidStruc trna)
+                                             what
+                                              spaces
+                                              (BS.unpack $ rnaFoldMFEStruc trna)
+                                              (rnaFoldMFEEner trna)
+                                               spaces
+                                               (BS.unpack $ rnaFoldCentroidStruc trna)
+                                               (rnaFoldCentroidEner trna)
       deltaE ∷ ScaleFunction Double
       deltaE = scaled -- frna trna = rnaFoldMFEEner trna - rnaFoldMFEEner frna
+      spaces = replicate 12 ' '
 {-# Inline aPretty #-}
 
-type FwdBS1  x = TwITbl Id Unboxed EmptyOk (BS1 First I) x
-type FwdUnit x = TwITbl Id Unboxed EmptyOk (Unit      I) x
+type FwdBS1  x = TwITbl Id Unboxed EmptyOk (BS1 Last I) x
+type FwdUnit x = TwITbl Id Unboxed EmptyOk (Unit     I) x
 
-type BTS1   x b = TwITblBt Unboxed EmptyOk (BS1 First I) x Id Id b
-type BTUnit x b = TwITblBt Unboxed EmptyOk (Unit I)      x Id Id b
+type BTS1   x b = TwITblBt Unboxed EmptyOk (BS1 Last I) x Id Id b
+type BTUnit x b = TwITblBt Unboxed EmptyOk (Unit I)     x Id Id b
 
 -- |
 --
@@ -312,7 +328,7 @@ forwardMinDist n scaled ipos rnas ntrs =
         (ITbl 3 0 EmptyOk (fromAssocs Unit         Unit                           999999 []))   -- Start
         EdgeWithSet   -- normal mutational event
         Singleton     -- first mutational event
-        (PeekIndex ∷ PeekIndex (BS1 First I))     -- undo intermediate
+        (PeekIndex ∷ PeekIndex (BS1 Last I))     -- undo intermediate
 {-# NoInline forwardMinDist #-}
 
 forwardMinDistValue fwd = md PA.! PA.Unit
@@ -338,7 +354,7 @@ backtrackMinDist1 n scaled ipos realPos rna ntrs mutpos (Z:.fwdB:.fwdF:.fwdI:.fw
                             (toBacktrack fwdS (undefined :: Id a -> Id a))
                             EdgeWithSet
                             Singleton
-                            (PeekIndex ∷ PeekIndex (BS1 First I))
+                            (PeekIndex ∷ PeekIndex (BS1 Last I))
                         :: Z:.BTS1 Double Text:.BTS1 Double Text:.BTS1 Double Text:.BTUnit Double Text
 {-# NoInline backtrackMinDist1 #-}
 
@@ -363,7 +379,7 @@ forwardEvidence n scaled ipos rnas ntrs =
         (ITbl 3 0 EmptyOk (fromAssocs Unit         Unit                           0 []))   -- Start
         EdgeWithSet   -- normal mutational event
         Singleton     -- first mutational event
-        (PeekIndex ∷ PeekIndex (BS1 First I))     -- undo intermediate
+        (PeekIndex ∷ PeekIndex (BS1 Last I))     -- undo intermediate
 {-# NoInline forwardEvidence #-}
 
 forwardEvidenceValue fwd = md PA.! PA.Unit

@@ -485,7 +485,8 @@ runBackmutationVariants scaleFun workdb alphabet ancestral extant ipos' = do
                                  iposbitset
                                  rnas
                                  ntrs
-    liftIO $ printf "Unobserved Mutation:   Position %3d Nucleotide %c   Delta: %5.1f   lnZ: %10.2f\n"
+    liftIO $ printf "Unobserved Mutation Type: %s  Position: %3d  Nucleotide: %c  Delta: %5.1f   lnZ: %10.2f\n"
+              (if iposbitset < 0 then "BM" else "IM" :: String)
               ipos' v
               (BM.forwardMinDistValue fmd)
               (ln $ BM.forwardEvidenceValue evi)

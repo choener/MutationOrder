@@ -124,7 +124,7 @@ oBackmutation = Backmutation
   , alphabet = ""
   , scoretype     = Centroid &= help "choose 'mfe', 'centroid', 'pairdistmfe', or 'pairdistcen' for the evaluation of each mutational step"
   , positivesquared = False &= help "square positive energies to penalize worse structures"
-  , onlypositive  = True &= help "minimize only over penalties, not energy gains"
+  , onlypositive  = False &= help "minimize only over penalties, not energy gains"
   }
 
 main :: IO ()
