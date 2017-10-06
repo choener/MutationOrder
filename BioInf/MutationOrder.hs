@@ -495,16 +495,24 @@ runBackmutationVariants scaleFun workdb alphabet ancestral extant ipos' = do
   return ()
 
 mfeDelta' :: Bool → Bool → BM.ScaleFunction Double
-mfeDelta' mx sq frna trna = (if sq then (\z → if z > 0 then z^2 else z) else id) . (if mx then max 0 else id) $ t - f
+mfeDelta' mx sq frna trna = guardPositives mx sq $ t - f
   where t = rnaFoldMFEEner trna
         f = rnaFoldMFEEner frna
 {-# Inlinable mfeDelta' #-}
 
 centroidDelta' :: Bool → Bool → BM.ScaleFunction Double
-centroidDelta' mx sq frna trna = (if sq then (\z → if z > 0 then z^2 else z) else id) . (if mx then max 0 else id) $ t - f
+centroidDelta' mx sq frna trna = guardPositives mx sq $ t - f
   where t = rnaFoldCentroidEner trna
         f = rnaFoldCentroidEner frna
 {-# Inlinable centroidDelta' #-}
+
+guardPositives mx sq = (if sq then (\z → if z > 0 then z^2 else z) else id) . (if mx then max 0 else id)
+
+mfebpdist' ∷ Bool → Bool → BM.ScaleFunction Double
+mfebpdist' mx sq frna trna = fromIntegral $ d1Distance (bldD1S $ rnaFoldMFEStruc frna) (bldD1S $ rnaFoldMFEStruc trna)
+
+centroidbpdist' ∷ Bool → Bool → BM.ScaleFunction Double
+centroidbpdist' mx sq frna trna = fromIntegral $ d1Distance (bldD1S $ rnaFoldCentroidStruc frna) (bldD1S $ rnaFoldCentroidStruc trna)
 
 partfun' ∷ BM.ScaleFunction Double → BM.ScaleFunction (Log Double)
 partfun' f frna trna = Exp . negate $ f frna trna

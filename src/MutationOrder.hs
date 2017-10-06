@@ -219,6 +219,8 @@ runBackmutation Backmutation{..} = do
     let scaleFun = case scoretype of
                       Centroid → centroidDelta' onlypositive positivesquared
                       Mfe → mfeDelta' onlypositive positivesquared
+                      PairDistMfe → mfebpdist' onlypositive positivesquared
+                      PairDistCen → centroidbpdist' onlypositive positivesquared
     runBackmutationVariants scaleFun workdb alphabet a e position
   case e of
     Left err → print (err ∷ String) >> exitFailure
