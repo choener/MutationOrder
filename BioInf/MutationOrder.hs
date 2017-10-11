@@ -38,6 +38,7 @@ import           Data.ByteString.Strict.Lens
 import           Data.Bits
 import           Data.ByteString (ByteString)
 import           Data.Char (toUpper)
+import           Data.Data
 import           Data.Function (on)
 import           Data.List (groupBy,sortBy,foldl',(\\),sort)
 import           Data.List.Split (chunksOf)
@@ -56,7 +57,7 @@ import qualified Data.Vector.Unboxed as VU
 import           System.Directory (doesFileExist)
 import           System.Exit (exitFailure)
 import           System.Exit (exitSuccess)
-import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle)
+import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle,stderr)
 import           Text.Printf
 
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
@@ -77,21 +78,60 @@ import qualified BioInf.MutationOrder.BackMutations as BM
 
 
 
-runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount cooptPrint lkupFile outprefix workdb temperature equalStart [ancestralFP,currentFP] = do
+data ScoreType
+  = Mfe
+  | Centroid
+  | PairDistMfe
+  | PairDistCen
+  | PairDistMfeTgt
+  | PairDistCenTgt
+  deriving (Show,Data,Typeable)
+
+
+
+runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive cooptCount cooptPrint lkupFile outprefix workdb temperature equalStart [ancestralFP,currentFP] = do
   -- only run if out file(s) do not exist
   dfe <- doesFileExist (outprefix ++ ".run")
   when dfe $ do
-    printf "%s.run exists, ending now!\n" outprefix
+    hPrintf stderr "%s.run exists, ending now!\n" outprefix
     exitSuccess
   withFile (outprefix ++ ".run") WriteMode $ \oH -> do
-    printf "%s.run job started!\n" outprefix
+    hPrintf stderr "%s.run job started!\n" outprefix
     --
     -- Initial stuff and debug information
     --
     ancestral <- stupidReader ancestralFP
     current   <- stupidReader currentFP
     lkup <- case lkupFile of {Nothing -> return Nothing; Just f -> Just <$> qlines f}
-    ls <- withDumpFile oH workdb ancestral current . fst $ createRNAlandscape lkup verbose ancestral current
+    printf "prepare to load dump file"
+    !ls <- withDumpFile oH workdb ancestral current . fst $ createRNAlandscape lkup verbose ancestral current
+    hPrintf stderr "dump file loaded\n"
+    -- final state in the rna landscape
+    let !tgtRNA = rnas ls HM.! (2^ mutationCount ls - 1)
+    hPrintf stderr "rna db loaded, tgt rna set\n"
+    let fwdScaleFunction
+          = (if positivesquared then squaredPositive else id)
+          . (maybe id (uncurry posScaled) posscaled)
+          . (if onlypositive then (scaleByFunction (max 0)) else id)
+          $ (case scoretype of Mfe -> mfeDelta
+                               Centroid -> centroidDelta
+                               PairDistMfe -> basepairDistanceMFE
+                               PairDistCen -> basepairDistanceCentroid
+                               PairDistMfeTgt → bpMFEDistToExtant tgtRNA
+                               PairDistCenTgt → bpCentroidDistToExtant tgtRNA
+                               )
+    let probScaleFunction
+          = scaleTemperature temperature
+          . (if positivesquared then squaredPositive else id)
+          . (maybe id (uncurry posScaled) posscaled)
+          . (if onlypositive then (scaleByFunction (max 0)) else id)
+          $ (case scoretype of Mfe -> mfeDelta
+                               Centroid -> centroidDelta
+                               PairDistMfe -> basepairDistanceMFE
+                               PairDistCen -> basepairDistanceCentroid
+                               PairDistMfeTgt → bpMFEDistToExtant tgtRNA
+                               PairDistCenTgt → bpCentroidDistToExtant tgtRNA
+                               )
     let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
     let bitToNuc = M.fromList $ map (swap . first (+1)) mpks
     let nn = length mpks
@@ -105,9 +145,13 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -- split co-optimals into "want to print" and "want to count";
     -- @countbs@ should be possible to stream
     let (printbs,countbs) = splitAt cooptPrint bs
+    hPrintf stderr "starting coopthisto\n"
+    let ch = coopthisto $ map snd bs
+    hPrintf stderr (show ch ++ "\n")
+    -- TODO here we can now do a histogram with printbs and countbs
     hPrintf oH "Best energy gain: %10.4f\n" e
     hPrintf oH "Number of co-optimal paths: %10d\n" countcount -- ((length printbs) + (length $ take (cooptCount-cooptPrint) bs))
-    forM_ printbs (T.hPutStrLn oH)
+    forM_ printbs (T.hPutStrLn oH . fst)
     hPrintf oH "%s\n\n" $ replicate 80 '='
     --
     -- Run @First@ probability algorithm to determine the probability for
@@ -302,6 +346,24 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
         (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just tt)
       hPutStrLn oH ""
     hPutStrLn oH ""
+    -- NEW: coopt histograms
+    hPutStrLn oH "Co-optimality histograms"
+    hPrintf oH "     "
+    forM_ [1.. mutationCount ls] (hPrintf oH " %10d")
+    hPrintf oH "\n"
+    forM_ ch $ \(h,as,rs) → do
+      hPrintf oH "%5d" h
+      -- absolutes
+      VU.mapM_ (\c → hPrintf oH " %10d" c) as
+      -- relatives
+      hPrintf oH "\n    r"
+      VU.mapM_ (\c → hPrintf oH " %10.8f" c) rs
+--      -- log-scale (1 + relative count)
+--      hPrintf oH "\n lnR "
+--      VU.mapM_ (\c → hPrintf oH " %10.8f" (log $ 1+c)) rs
+      hPrintf oH "\n"
+    hPrintf oH "\n"
+--  -- MEA order
     let meaOrder =
           let go = \case SHP.BTnode (_:.To n) -> n
                          SHP.BTedge (From ff:.To tt) -> tt
@@ -325,6 +387,30 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -}
 {-# NoInline runMutationOrder #-}
 
+-- | Histogram that provides for each mutation position the relative frequency
+-- with which the mutation shows up as the k'th one in the order.
+
+coopthisto
+  ∷ [[Int]]
+  -- ^ list of permutation orders @[ [116, 10, 48, 30] , [10, 30, 48, 116], ... ]@
+  → [(Int,VU.Vector Int, VU.Vector Double)]
+  -- ^ list of mutation, absolute frequency of position, relative frequency of position
+coopthisto as@(a':_) = es
+  where
+    -- just so that we know
+    keys = sort a'
+    -- add positional information: each permutation order has @(,index)@ added.
+    -- then we can concatenate all lists and get @[ (116,1), (10,2), ... (116,4), ...]@
+    bs = concatMap (\a → zip a [1∷Int ..]) as
+    -- into hashmap, (mutation, order position) sum up how often seen
+    cs = HM.fromListWith (+) $ map (,1∷Int) bs
+    -- absolute frequencies
+    ds = [ (k, VU.fromList [ HM.lookupDefault 0 (k, i) cs
+                           | i ← [1 .. length keys] ])
+         | k ← keys ]
+    -- attach relative frequencies
+    es = [ (k, abs, VU.map (\q → fromIntegral q / s) abs) | (k,abs) ← ds, let s = fromIntegral $ VU.sum abs ]
+
 posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction
 posScaled l s = scaleByFunction go where
   go d | d >= l    = d ** s
@@ -332,13 +418,23 @@ posScaled l s = scaleByFunction go where
   {-# Inline go #-}
 {-# Inlinable posScaled #-}
 
--- | Basepair distance
+-- ** Basepair distance, between neighbors
 
 basepairDistanceMFE :: ScaleFunction
 basepairDistanceMFE frna trna = fromIntegral $ d1Distance (mfeD1S frna) (mfeD1S trna)
 
 basepairDistanceCentroid :: ScaleFunction
 basepairDistanceCentroid frna trna = fromIntegral $ d1Distance (centroidD1S frna) (centroidD1S trna)
+
+-- ** Basepair distance, from currently newest to extant
+
+bpMFEDistToExtant ∷ RNA → ScaleFunction
+bpMFEDistToExtant extant _ trna = fromIntegral $ d1Distance e (mfeD1S trna)
+  where e = mfeD1S extant
+
+bpCentroidDistToExtant ∷ RNA → ScaleFunction
+bpCentroidDistToExtant extant _ trna = fromIntegral $ d1Distance e (mfeD1S trna)
+  where e = mfeD1S extant
 
 -- | Scale function for normal mfe delta energies
 

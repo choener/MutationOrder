@@ -87,7 +87,10 @@ data RNAfoldResult = RNAfoldResult
   , rnaFoldMFEEner        ∷ !Double
   , rnaFoldMfeFrequency   ∷ !Double
   , rnaFoldEnsembleStruc  ∷ !ByteString
+  -- ^ uses special syntax with unpaired, weakly paired, somewhat paired,
+  -- somewhat paired up or down, strongly paired up or down for the ensemble
   , rnaFoldEnsembleEner   ∷ !Double
+  -- ^ this *is* the ensemble free energy
   , rnaFoldCentroidStruc  ∷ !ByteString
   , rnaFoldCentroidEner   ∷ !Double
   , rnaFoldDiversity      ∷ !Double

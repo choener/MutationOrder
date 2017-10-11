@@ -17,13 +17,6 @@ import BioInf.MutationOrder
 import BioInf.MutationOrder.RNA
 import BioInf.MutationOrder.SequenceDB
 
-data ScoreType
-  = Mfe
-  | Centroid
-  | PairDistMfe
-  | PairDistCen
-  deriving (Show,Data,Typeable)
-
 data Options
   = MutationOrder
     { infiles       :: [FilePath]
@@ -188,24 +181,7 @@ mainProgram oOptions = do
     putStrLn "\n\n\nThis program expects exactly two equal-length fasta files as input"
     exitFailure
   isL <- isLoud
-  let fwdScaleFunction
-        = (if positivesquared then squaredPositive else id)
-        . (maybe id (uncurry posScaled) posscaled)
-        . (if onlypositive then (scaleByFunction (max 0)) else id)
-        $ (case scoretype of Mfe -> mfeDelta
-                             Centroid -> centroidDelta
-                             PairDistMfe -> basepairDistanceMFE
-                             PairDistCen -> basepairDistanceCentroid)
-  let insideScaleFunction
-        = scaleTemperature temperature
-        . (if positivesquared then squaredPositive else id)
-        . (maybe id (uncurry posScaled) posscaled)
-        . (if onlypositive then (scaleByFunction (max 0)) else id)
-        $ (case scoretype of Mfe -> mfeDelta
-                             Centroid -> centroidDelta
-                             PairDistMfe -> basepairDistanceMFE
-                             PairDistCen -> basepairDistanceCentroid)
-  runMutationOrder isL fillweight fillstyle fwdScaleFunction insideScaleFunction cooptcount cooptprint lkupfile outprefix workdb temperature equalStart infiles
+  runMutationOrder isL fillweight fillstyle scoretype positivesquared posscaled onlypositive cooptcount cooptprint lkupfile outprefix workdb temperature equalStart infiles
 
 runBackmutation ∷ Options → IO ()
 runBackmutation Backmutation{..} = do
