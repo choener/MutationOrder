@@ -34,6 +34,7 @@ data Options
     , posscaled :: Maybe (Double,Double)
     , lkupfile :: Maybe FilePath
     , showmanual    :: Bool
+    , everykth :: Int
     }
   | GenSequences
     { ancestralSequence ∷ FilePath
@@ -95,6 +96,7 @@ oMutationOrder = MutationOrder
   , posscaled     = Nothing &= help "--posscaled=x,y   scale all values >= x by using y as exponent"
   , lkupfile = Nothing  &= help "developer option: if an RNAfold file with foldings exists, then use it"
   , showmanual = False  &= help "shows the manual"
+  , everykth = 1 &= help "for optimal history sampling, choose every kth item only"
   }
 
 oGenSequences = GenSequences
@@ -181,7 +183,7 @@ mainProgram oOptions = do
     putStrLn "\n\n\nThis program expects exactly two equal-length fasta files as input"
     exitFailure
   isL <- isLoud
-  runMutationOrder isL fillweight fillstyle scoretype positivesquared posscaled onlypositive cooptcount cooptprint lkupfile outprefix workdb temperature equalStart infiles
+  runMutationOrder isL fillweight fillstyle scoretype positivesquared posscaled onlypositive cooptcount cooptprint lkupfile outprefix workdb temperature equalStart infiles everykth
 
 runBackmutation ∷ Options → IO ()
 runBackmutation Backmutation{..} = do

@@ -89,7 +89,7 @@ data ScoreType
 
 
 
-runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive cooptCount cooptPrint lkupFile outprefix workdb temperature equalStart [ancestralFP,currentFP] = do
+runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive cooptCount cooptPrint lkupFile outprefix workdb temperature equalStart [ancestralFP,currentFP] everyKth = do
   -- only run if out file(s) do not exist
   dfe <- doesFileExist (outprefix ++ ".run")
   when dfe $ do
@@ -103,7 +103,7 @@ runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive 
     ancestral <- stupidReader ancestralFP
     current   <- stupidReader currentFP
     lkup <- case lkupFile of {Nothing -> return Nothing; Just f -> Just <$> qlines f}
-    printf "prepare to load dump file"
+    hPrintf stderr "prepare to load dump file\n"
     !ls <- withDumpFile oH workdb ancestral current . fst $ createRNAlandscape lkup verbose ancestral current
     hPrintf stderr "dump file loaded\n"
     -- final state in the rna landscape
@@ -140,13 +140,18 @@ runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive 
     --
     -- Run co-optimal lowest energy changes
     --
-    let (e,bs) = runCoOptDist fwdScaleFunction ls
+    hPrintf stderr "starting forward phase\n"
+    let (!e,bs) = runCoOptDist fwdScaleFunction ls
+    hPrintf stderr "forward phase done with %f\n" e
+--    forM_ bs $ \b → hPrintf stderr "%s\n" (show b)
     let (ecount,countcount) = runCount fwdScaleFunction ls
     -- split co-optimals into "want to print" and "want to count";
     -- @countbs@ should be possible to stream
     let (printbs,countbs) = splitAt cooptPrint bs
     hPrintf stderr "starting coopthisto\n"
-    let ch = coopthisto $ map snd bs
+    let takeKth k [] = []
+        takeKth k (x:xs) = x : takeKth k xs
+    let ch = coopthisto $ map snd $ takeKth everyKth $ take cooptCount $ printbs ++ countbs
     hPrintf stderr (show ch ++ "\n")
     -- TODO here we can now do a histogram with printbs and countbs
     hPrintf oH "Best energy gain: %10.4f\n" e
@@ -352,7 +357,7 @@ runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive 
     forM_ [1.. mutationCount ls] (hPrintf oH " %10d")
     hPrintf oH "\n"
     forM_ ch $ \(h,as,rs) → do
-      hPrintf oH "%5d" h
+      hPrintf oH "%5d" $ h+1
       -- absolutes
       VU.mapM_ (\c → hPrintf oH " %10d" c) as
       -- relatives
@@ -395,13 +400,14 @@ coopthisto
   -- ^ list of permutation orders @[ [116, 10, 48, 30] , [10, 30, 48, 116], ... ]@
   → [(Int,VU.Vector Int, VU.Vector Double)]
   -- ^ list of mutation, absolute frequency of position, relative frequency of position
-coopthisto as@(a':_) = es
+coopthisto as@(a':_) = es -- traceShow (keys,as,bs,cs,ds) $ es
   where
     -- just so that we know
     keys = sort a'
     -- add positional information: each permutation order has @(,index)@ added.
     -- then we can concatenate all lists and get @[ (116,1), (10,2), ... (116,4), ...]@
-    bs = concatMap (\a → zip a [1∷Int ..]) as
+    rks = reverse [1 .. length keys]
+    bs = concatMap (\a → zip a rks) as
     -- into hashmap, (mutation, order position) sum up how often seen
     cs = HM.fromListWith (+) $ map (,1∷Int) bs
     -- absolute frequencies
@@ -409,7 +415,7 @@ coopthisto as@(a':_) = es
                            | i ← [1 .. length keys] ])
          | k ← keys ]
     -- attach relative frequencies
-    es = [ (k, abs, VU.map (\q → fromIntegral q / s) abs) | (k,abs) ← ds, let s = fromIntegral $ VU.sum abs ]
+    es = [ (k, abs, VU.map (\q → fromIntegral q / s) abs) | (k,abs) ← ds, let (s∷Double) = fromIntegral $ VU.sum abs ]
 
 posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction
 posScaled l s = scaleByFunction go where
@@ -429,11 +435,11 @@ basepairDistanceCentroid frna trna = fromIntegral $ d1Distance (centroidD1S frna
 -- ** Basepair distance, from currently newest to extant
 
 bpMFEDistToExtant ∷ RNA → ScaleFunction
-bpMFEDistToExtant extant _ trna = fromIntegral $ d1Distance e (mfeD1S trna)
+bpMFEDistToExtant extant frna trna = fromIntegral $ d1Distance e (mfeD1S trna) - d1Distance e (mfeD1S frna)
   where e = mfeD1S extant
 
 bpCentroidDistToExtant ∷ RNA → ScaleFunction
-bpCentroidDistToExtant extant _ trna = fromIntegral $ d1Distance e (mfeD1S trna)
+bpCentroidDistToExtant extant frna trna = fromIntegral $ d1Distance e (mfeD1S trna) - d1Distance e (mfeD1S frna)
   where e = mfeD1S extant
 
 -- | Scale function for normal mfe delta energies

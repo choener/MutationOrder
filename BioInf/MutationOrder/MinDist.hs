@@ -140,7 +140,7 @@ aPretty scaled Landscape{..} = SigMinDist
         eM   = mfeEnergy trna - mfeEnergy frna
         eC   = centroidEnergy trna - centroidEnergy frna
         eS   = scaled frna trna
-      in  (T.concat [showHdr frna n', showMut frna trna n' eM eC eS], [n])
+      in  (T.concat [showHdr frna n', showMut frna trna n' eM eC eS], [n'])
   , fini = id
   , h    = SM.toList
   } where
