@@ -217,6 +217,7 @@ runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive 
     -- colMarginals gives the total probability that the mutation order
     -- ends with this mutation.
     let colMarginals = M.mapKeysWith (+) snd firstlastP
+    hPrintf oH "lnZ: %8.5f\n" $ ln firstlastZ
     hPrintf oH "       "
     forM_ (M.elems bitToNuc) $ \mut -> hPrintf oH "%6d " mut
     hPrintf oH "         Σ\n"
