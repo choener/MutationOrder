@@ -189,6 +189,6 @@ source-repository head
 
 source-repository this
   type: git
-  location: git://github.com/choener/Gene-CluEDO/tree/0.0.1.0
+  location: git://github.com/choener/MutationOrder/tree/0.0.1.0
   tag: 0.0.1.0
 
