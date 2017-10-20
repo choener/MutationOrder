@@ -29,57 +29,109 @@ module BioInf.MutationOrder
   , ScaleFunction (..)
   ) where
 
-import qualified Data.Vector.Unboxed as VU
-import           Data.Tuple (swap)
-import           Control.Monad (unless,forM_,when)
+import           Control.Arrow (first,second)
+import           Control.Error
+import           Control.Monad.IO.Class (liftIO)
+import           Control.Monad (unless,forM_,when,forM)
+import           Control.Lens
+import           Data.ByteString.Strict.Lens
 import           Data.Bits
 import           Data.ByteString (ByteString)
+import           Data.Char (toUpper)
+import           Data.Data
 import           Data.Function (on)
-import           Data.List (groupBy,sortBy)
+import           Data.List (groupBy,sortBy,foldl',(\\),sort)
+import           Data.List.Split (chunksOf)
 import           Data.Ord (comparing)
+import           Data.Tuple (swap)
+import           Debug.Trace
 import           Numeric.Log
+import qualified Control.Parallel.Strategies as Par
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Trie as Trie
+import qualified Data.Vector.Unboxed as VU
 import           System.Directory (doesFileExist)
 import           System.Exit (exitFailure)
-import           Text.Printf
-import           Control.Arrow (first,second)
-import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle)
 import           System.Exit (exitSuccess)
+import           System.IO (withFile,IOMode(WriteMode),hPutStrLn,Handle,stderr)
+import           Text.Printf
 
 import           ADP.Fusion.Term.Edge.Type (From(..),To(..))
+import           Biobase.Secondary.Diagrams (d1Distance)
 import           Data.PrimitiveArray (fromEdgeBoundaryFst, EdgeBoundary(..), (:.)(..), getBoundary)
 import           Data.PrimitiveArray.ScoreMatrix
-import qualified Data.PrimitiveArray as PA
 import           Diagrams.TwoD.ProbabilityGrid
 import qualified Data.Bijection.HashMap as B
+import qualified Data.PrimitiveArray as PA
 import qualified ShortestPath.SHP.Edge.MinDist as SHP
-import           Biobase.Secondary.Diagrams (d1Distance)
+import           Data.Bits.Ordered
 
 import           BioInf.MutationOrder.EdgeProb
 import           BioInf.MutationOrder.MinDist
 import           BioInf.MutationOrder.RNA
+import           BioInf.MutationOrder.SequenceDB
+import qualified BioInf.MutationOrder.BackMutations as BM
 
 
 
-runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount cooptPrint lkupFile outprefix workdb temperature equalStart [ancestralFP,currentFP] = do
+data ScoreType
+  = Mfe
+  | Centroid
+  | PairDistMfe
+  | PairDistCen
+  | PairDistMfeTgt
+  | PairDistCenTgt
+  deriving (Show,Data,Typeable)
+
+
+
+runMutationOrder verbose fw fs scoretype positivesquared posscaled onlypositive cooptCount cooptPrint lkupFile outprefix workdb temperature equalStart [ancestralFP,currentFP] everyKth = do
   -- only run if out file(s) do not exist
   dfe <- doesFileExist (outprefix ++ ".run")
   when dfe $ do
-    printf "%s.run exists, ending now!\n" outprefix
+    hPrintf stderr "%s.run exists, ending now!\n" outprefix
     exitSuccess
   withFile (outprefix ++ ".run") WriteMode $ \oH -> do
-    printf "%s.run job started!\n" outprefix
+    hPrintf stderr "%s.run job started!\n" outprefix
     --
     -- Initial stuff and debug information
     --
     ancestral <- stupidReader ancestralFP
     current   <- stupidReader currentFP
     lkup <- case lkupFile of {Nothing -> return Nothing; Just f -> Just <$> qlines f}
-    ls <- withDumpFile oH workdb ancestral current . fst $ createRNAlandscape lkup verbose ancestral current
+    hPrintf stderr "prepare to load dump file\n"
+    !ls <- withDumpFile oH workdb ancestral current . fst $ createRNAlandscape lkup verbose ancestral current
+    hPrintf stderr "dump file loaded\n"
+    -- final state in the rna landscape
+    let !tgtRNA = rnas ls HM.! (2^ mutationCount ls - 1)
+    hPrintf stderr "rna db loaded, tgt rna set\n"
+    let fwdScaleFunction
+          = (if positivesquared then squaredPositive else id)
+          . (maybe id (uncurry posScaled) posscaled)
+          . (if onlypositive then (scaleByFunction (max 0)) else id)
+          $ (case scoretype of Mfe -> mfeDelta
+                               Centroid -> centroidDelta
+                               PairDistMfe -> basepairDistanceMFE
+                               PairDistCen -> basepairDistanceCentroid
+                               PairDistMfeTgt → bpMFEDistToExtant tgtRNA
+                               PairDistCenTgt → bpCentroidDistToExtant tgtRNA
+                               )
+    let probScaleFunction
+          = scaleTemperature temperature
+          . (if positivesquared then squaredPositive else id)
+          . (maybe id (uncurry posScaled) posscaled)
+          . (if onlypositive then (scaleByFunction (max 0)) else id)
+          $ (case scoretype of Mfe -> mfeDelta
+                               Centroid -> centroidDelta
+                               PairDistMfe -> basepairDistanceMFE
+                               PairDistCen -> basepairDistanceCentroid
+                               PairDistMfeTgt → bpMFEDistToExtant tgtRNA
+                               PairDistCenTgt → bpCentroidDistToExtant tgtRNA
+                               )
     let mpks = sortBy (comparing snd) . B.toList $ mutationPositions ls
     let bitToNuc = M.fromList $ map (swap . first (+1)) mpks
     let nn = length mpks
@@ -88,14 +140,23 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     --
     -- Run co-optimal lowest energy changes
     --
-    let (e,bs) = runCoOptDist fwdScaleFunction ls
+    hPrintf stderr "starting forward phase\n"
+    let (!e,bs) = runCoOptDist fwdScaleFunction ls
+    hPrintf stderr "forward phase done with %f\n" e
+--    forM_ bs $ \b → hPrintf stderr "%s\n" (show b)
     let (ecount,countcount) = runCount fwdScaleFunction ls
     -- split co-optimals into "want to print" and "want to count";
     -- @countbs@ should be possible to stream
     let (printbs,countbs) = splitAt cooptPrint bs
+    hPrintf stderr "starting coopthisto\n"
+    let takeKth k [] = []
+        takeKth k (x:xs) = x : takeKth k xs
+    let ch = coopthisto $ map snd $ takeKth everyKth $ take cooptCount $ printbs ++ countbs
+    hPrintf stderr (show ch ++ "\n")
+    -- TODO here we can now do a histogram with printbs and countbs
     hPrintf oH "Best energy gain: %10.4f\n" e
     hPrintf oH "Number of co-optimal paths: %10d\n" countcount -- ((length printbs) + (length $ take (cooptCount-cooptPrint) bs))
-    forM_ printbs (T.hPutStrLn oH)
+    forM_ printbs (T.hPutStrLn oH . fst)
     hPrintf oH "%s\n\n" $ replicate 80 '='
     --
     -- Run @First@ probability algorithm to determine the probability for
@@ -156,6 +217,7 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -- colMarginals gives the total probability that the mutation order
     -- ends with this mutation.
     let colMarginals = M.mapKeysWith (+) snd firstlastP
+    hPrintf oH "lnZ: %8.5f\n" $ ln firstlastZ
     hPrintf oH "       "
     forM_ (M.elems bitToNuc) $ \mut -> hPrintf oH "%6d " mut
     hPrintf oH "         Σ\n"
@@ -290,6 +352,24 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
         (SHP.BTedge (From ff:.To tt),mut) -> prettyPrint mut (Just tt)
       hPutStrLn oH ""
     hPutStrLn oH ""
+    -- NEW: coopt histograms
+    hPutStrLn oH "Co-optimality histograms"
+    hPrintf oH "     "
+    forM_ [1.. mutationCount ls] (hPrintf oH " %10d")
+    hPrintf oH "\n"
+    forM_ ch $ \(h,as,rs) → do
+      hPrintf oH "%5d" $ h+1
+      -- absolutes
+      VU.mapM_ (\c → hPrintf oH " %10d" c) as
+      -- relatives
+      hPrintf oH "\n    r"
+      VU.mapM_ (\c → hPrintf oH " %10.8f" c) rs
+--      -- log-scale (1 + relative count)
+--      hPrintf oH "\n lnR "
+--      VU.mapM_ (\c → hPrintf oH " %10.8f" (log $ 1+c)) rs
+      hPrintf oH "\n"
+    hPrintf oH "\n"
+--  -- MEA order
     let meaOrder =
           let go = \case SHP.BTnode (_:.To n) -> n
                          SHP.BTedge (From ff:.To tt) -> tt
@@ -313,6 +393,31 @@ runMutationOrder verbose fw fs fwdScaleFunction probScaleFunction cooptCount coo
     -}
 {-# NoInline runMutationOrder #-}
 
+-- | Histogram that provides for each mutation position the relative frequency
+-- with which the mutation shows up as the k'th one in the order.
+
+coopthisto
+  ∷ [[Int]]
+  -- ^ list of permutation orders @[ [116, 10, 48, 30] , [10, 30, 48, 116], ... ]@
+  → [(Int,VU.Vector Int, VU.Vector Double)]
+  -- ^ list of mutation, absolute frequency of position, relative frequency of position
+coopthisto as@(a':_) = es -- traceShow (keys,as,bs,cs,ds) $ es
+  where
+    -- just so that we know
+    keys = sort a'
+    -- add positional information: each permutation order has @(,index)@ added.
+    -- then we can concatenate all lists and get @[ (116,1), (10,2), ... (116,4), ...]@
+    rks = reverse [1 .. length keys]
+    bs = concatMap (\a → zip a rks) as
+    -- into hashmap, (mutation, order position) sum up how often seen
+    cs = HM.fromListWith (+) $ map (,1∷Int) bs
+    -- absolute frequencies
+    ds = [ (k, VU.fromList [ HM.lookupDefault 0 (k, i) cs
+                           | i ← [1 .. length keys] ])
+         | k ← keys ]
+    -- attach relative frequencies
+    es = [ (k, abs, VU.map (\q → fromIntegral q / s) abs) | (k,abs) ← ds, let (s∷Double) = fromIntegral $ VU.sum abs ]
+
 posScaled :: Double -> Double -> ScaleFunction -> ScaleFunction
 posScaled l s = scaleByFunction go where
   go d | d >= l    = d ** s
@@ -320,13 +425,23 @@ posScaled l s = scaleByFunction go where
   {-# Inline go #-}
 {-# Inlinable posScaled #-}
 
--- | Basepair distance
+-- ** Basepair distance, between neighbors
 
 basepairDistanceMFE :: ScaleFunction
 basepairDistanceMFE frna trna = fromIntegral $ d1Distance (mfeD1S frna) (mfeD1S trna)
 
 basepairDistanceCentroid :: ScaleFunction
 basepairDistanceCentroid frna trna = fromIntegral $ d1Distance (centroidD1S frna) (centroidD1S trna)
+
+-- ** Basepair distance, from currently newest to extant
+
+bpMFEDistToExtant ∷ RNA → ScaleFunction
+bpMFEDistToExtant extant frna trna = fromIntegral $ d1Distance e (mfeD1S trna) - d1Distance e (mfeD1S frna)
+  where e = mfeD1S extant
+
+bpCentroidDistToExtant ∷ RNA → ScaleFunction
+bpCentroidDistToExtant extant frna trna = fromIntegral $ d1Distance e (mfeD1S trna) - d1Distance e (mfeD1S frna)
+  where e = mfeD1S extant
 
 -- | Scale function for normal mfe delta energies
 
@@ -408,4 +523,192 @@ withDumpFile oH fp ancestral current l = do
     hPrintf oH "database %s does not exist! Folding all intermediate structures. This may take a while!\n" fp
     toFileJSON fp l
     return l
+
+-- | This function will run a subset of the possible backmutations. In
+-- particular, only those mutations for one particular backmutation column are
+-- being used.
+--
+-- TODO less explicit transformer stack!
+
+runBackmutationVariants
+  ∷ BM.ScaleFunction Double
+  → FilePath
+  -- ^ where the work db lives
+  → [Char]
+  -- ^
+  → Ancestral
+  -- ^ The ancestral sequence from which we mutate away
+  → Extant
+  -- ^ The sequence to which to mutate to
+  → Int
+  -- ^ The backmutation / intermediate mutation we look at. Indexed with @[1..sequence length]@.
+  -- TODO wrap in newtype that enforces this. We have some index structure saying "Start at 1".
+  → ExceptT String IO ()
+runBackmutationVariants scaleFun workdb alphabet ancestral extant ipos' = do
+  let ipos = ipos' - 1
+  -- error guarding
+  unless (ipos >=0) $ throwE "ipos can not be negative"
+  unless (ipos < (BS.length $ getAncestral ancestral)) $ throwE "ipos larger than sequence length"
+  unless (BS.length (getAncestral ancestral) == BS.length (getExtant extant)) $ throwE "ancestral and extant sequence do not have equal length"
+  -- Load all sequences for the original problem -- they are needed anyway
+  -- TODO i think @origSeqs'@ does not hold the original sequences, need to check tonight
+  (seqCount, origSeqs', variants) ← createRNAlandscape2 alphabet (Right [ipos]) [] ancestral extant
+  let origSeqs = Trie.fromList [ (s,()) | s ← origSeqs' ]
+  varSeqs ← forM (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
+    let vsqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
+    return (v, vsqs)
+  -- liftIO $ print workdb
+  -- TODO do only a single pass over the data
+  -- origStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
+  allStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` origSeqs
+                                  || or [rnaFoldSequence r `Trie.member` vs | (_,vs) ← varSeqs] )
+          <$> map rna2dna <$> readRNAfoldFiles workdb
+  let (rnas,_,_,_) = genSet ancestral extant Nothing allStrs
+  -- The @ipos@ declares how many variants we have
+  forM_ (alphabet \\ [getAncestral ancestral `BS.index` ipos, getExtant extant `BS.index` ipos]) $ \v → do
+    let varSeqs = Trie.fromList [ (s,()) | (i,c,ss) ← variants, c == v, s ← ss ]
+    varStrs ← liftIO $ filter (\r → rnaFoldSequence r `Trie.member` varSeqs) <$> map rna2dna <$> readRNAfoldFiles workdb
+    let (ntrs,iposbitset,numMuts,mutpos) = genSet ancestral extant (Just (ipos,v)) allStrs
+    --liftIO $ print (numMuts, iposbitset, rnas, ntrs, HM.size rnas, HM.size ntrs)
+    let fmd = BM.forwardMinDist numMuts
+                                scaleFun
+                                iposbitset
+                                rnas
+                                ntrs
+    let bts = BM.backtrackMinDist1 numMuts
+                                   scaleFun
+                                   iposbitset
+                                   ipos'
+                                   rnas
+                                   ntrs
+                                   mutpos
+                                   fmd
+    let evi = BM.forwardEvidence numMuts
+                                 (partfun' scaleFun)
+                                 iposbitset
+                                 rnas
+                                 ntrs
+    liftIO $ printf "Unobserved Mutation Type: %s  Position: %3d  Nucleotide: %c  Delta: %5.1f   lnZ: %10.2f\n"
+              (if iposbitset < 0 then "BM" else "IM" :: String)
+              ipos' v
+              (BM.forwardMinDistValue fmd)
+              (ln $ BM.forwardEvidenceValue evi)
+    liftIO $ mapM_ T.putStrLn $ take 1 bts
+    return ()
+  return ()
+
+mfeDelta' :: Bool → Bool → BM.ScaleFunction Double
+mfeDelta' mx sq frna trna = guardPositives mx sq $ t - f
+  where t = rnaFoldMFEEner trna
+        f = rnaFoldMFEEner frna
+{-# Inlinable mfeDelta' #-}
+
+centroidDelta' :: Bool → Bool → BM.ScaleFunction Double
+centroidDelta' mx sq frna trna = guardPositives mx sq $ t - f
+  where t = rnaFoldCentroidEner trna
+        f = rnaFoldCentroidEner frna
+{-# Inlinable centroidDelta' #-}
+
+guardPositives mx sq = (if sq then (\z → if z > 0 then z^2 else z) else id) . (if mx then max 0 else id)
+
+mfebpdist' ∷ Bool → Bool → BM.ScaleFunction Double
+mfebpdist' mx sq frna trna = fromIntegral $ d1Distance (bldD1S $ rnaFoldMFEStruc frna) (bldD1S $ rnaFoldMFEStruc trna)
+
+centroidbpdist' ∷ Bool → Bool → BM.ScaleFunction Double
+centroidbpdist' mx sq frna trna = fromIntegral $ d1Distance (bldD1S $ rnaFoldCentroidStruc frna) (bldD1S $ rnaFoldCentroidStruc trna)
+
+partfun' ∷ BM.ScaleFunction Double → BM.ScaleFunction (Log Double)
+partfun' f frna trna = Exp . negate $ f frna trna
+{-# Inlineable partfun' #-}
+
+rna2dna ∷ RNAfoldResult → RNAfoldResult
+rna2dna r = r { rnaFoldSequence = BS.map go $ rnaFoldSequence r } where
+  go x =let x' = toUpper x in if x' == 'U' then 'T' else x'
+
+-- | Given ancestral and extant sequence, and possibly an intermediate
+-- mutation, as well as a list of intermediates create the set to RNA structure
+-- mapping.
+--
+-- TODO some of the functions here should go into @Lib-SequencePolymorphism@.
+--
+-- TODO should run within @ExceptT@ !
+
+genSet
+  ∷ Ancestral
+  → Extant
+  → Maybe (Int,Char)
+  -- ^ If @Just@ then the 0-based position and character of the intermediate
+  -- mutation.
+  → [RNAfoldResult]
+  → (HM.HashMap Int RNAfoldResult, Int, Int, B.BimapHashMap Int Int)
+genSet (Ancestral a') (Extant e') v xs = (HM.fromList kv, ipos, B.size posbit, posbit)
+  where kv = [ (b, maybe (kvErr b) id $ HM.lookup (pat2str b) lkupRes) | b ← bits ]
+        kvErr b = error $ show (lkupRes, sort $ map rnaFoldSequence xs, v, posbit, b, bits, pat2str b)
+        -- update a/e based on if we have the intermediate mutation set up.
+        a = maybe a' (\(i,c) → unpackedChars.ix i .~ c $ a') v
+        e = maybe e' (\(i,c) → unpackedChars.ix i .~ c $ e') v
+        -- all positions where the two bytestrings differ, together with the
+        -- differing characters
+        ks = filter (\(_,i,j) → i/=j) $ zip3 [0∷Int ..] (BS.unpack a') (BS.unpack e')
+        -- turn into a bijection of actual position (first) and bit in bitset
+        -- (second)
+        posbit ∷ B.BimapHashMap Int Int
+        posbit = B.fromList $ zip (ks^..traverse._1) [0∷Int ..]
+        -- all bit patterns
+        bits = [0 .. 2^B.size posbit - 1]
+        -- convert a bit pattern to an actual string, to be looked up. Start
+        -- with the ancestral sequence and for each @1@, modify the character
+        -- into the one encountered in the extant sequence.
+        pat2str ∷ Int → ByteString
+        pat2str = let go s k = unpackedChars.ix (lk k) .~ (e `BS.index` lk k) $ s
+                      lk = maybe (error "lk") id . B.lookupR posbit
+                  in  foldl' go a . activeBitsL
+        -- lookup from sequence to RNAfoldResult
+        lkupRes = HM.fromList [ (rnaFoldSequence x,x) | x ← xs ]
+        -- is the global mutation intermediate? Yes: then >= 0 is the bitset
+        -- element to be returned here
+        ipos = maybe (-1) (\(z,_) → if BS.index a' z /= BS.index e' z then (maybe (error "ipos") id $ B.lookupL posbit z) else -1) v
+
+-- | Run the intermediate / backmutation order variant. This variant is slow,
+-- and requires large pre-calculated files, we parallelize and aggregate as
+-- much as possible.
+--
+-- TODO read monad ?!
+
+{-
+runBackmutationVariants
+  ∷ Int
+  → [Char]
+  → GlobalBackmutations
+  → [BackmutationCol]
+  → Ancestral
+  → Extant
+  → ExceptT String IO ()
+runBackmutationVariants aggregate alphabet globback backcols ancestral extant = do
+  -- Load all sequences for the original problem -- they are needed anyway
+  (seqCount, origSeqs', variants) ← createRNAlandscape2 alphabet globback backcols ancestral extant
+  let origSeqs = Trie.fromList [ (s,()) | s ← origSeqs' ]
+  origStrs ← filter (\r → rnaFoldSequence r `Trie.member` origSeqs) <$> readRNAfoldFiles (error "workdb")
+  let rnas = error "bitset -> rnafoldresult data"
+  -- Group into sets of @aggregate@ elements for sequence aggregation
+  let ass = chunksOf aggregate variants
+  forM_ ass $ \as → do
+    -- the required sequences are given by @origSeqs@ but modified at the appropriate position
+    let aggrSeqss = map (\(p,n,xs) → (p,n,Trie.fromList [ (x,()) | x ← xs ])) as
+    let allss = foldl' (\z (_,_,x) → Trie.unionL z x) Trie.empty aggrSeqss
+    -- read in the structures for all as
+    aggrStr ← filter (\r → rnaFoldSequence r `Trie.member` allss) <$> readRNAfoldFiles (error "workdb")
+    let go (p,n,xs) = (p,n) where
+          -- prepare the @ntrs@ data structure for each as
+          ntrs = undefined $ filter (\r → rnaFoldSequence r `Trie.member` xs) aggrStr
+          fMnD = BM.forwardMinDist (error "number of known mutations") (error "scale function") rnas ntrs
+          fwdZ = BM.forwardEvidence (error "number of known mutations") (error "scale function for evidence") rnas ntrs
+    -- parallel calculation and output for the different cases
+    let rs = Par.parMap Par.rdeepseq go aggrSeqss
+    forM_ rs $ \r → do
+      return ()
+    return ()
+  -- print each output
+  return ()
+-}
 

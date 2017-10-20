@@ -121,7 +121,7 @@ aInside restrictStartNode scaled Landscape{..} = SigMinDist
 --
 -- TODO Use text builder
 
-aPretty :: Monad m => ScaleFunction -> Landscape -> SigMinDist m Text [Text] (Int:.From:.To) (Int:.To)
+aPretty :: Monad m => ScaleFunction -> Landscape -> SigMinDist m (Text,[Int]) [(Text,[Int])] (Int:.From:.To) (Int:.To)
 aPretty scaled Landscape{..} = SigMinDist
   { edge = \x (fset:.From f:.To t) -> let frna = rnas HM.! (BitSet fset)
                                           trna = rnas HM.! (BitSet fset `setBit` f `setBit` t)
@@ -130,8 +130,8 @@ aPretty scaled Landscape{..} = SigMinDist
                                           eS = scaled frna trna
                                           f' = fromJust $ B.lookupR mutationPositions f
                                           t' = fromJust $ B.lookupR mutationPositions t
-                                      in  T.concat [x, showMut frna trna t' eM eC eS]
-  , mpty = \()  -> ""
+                                      in  (T.concat [fst x, showMut frna trna t' eM eC eS], t' : snd x)
+  , mpty = \()  -> ("",[])
   , node = \(nset:.To n)  ->
       let
         frna = rnas HM.! (BitSet 0)
@@ -140,7 +140,7 @@ aPretty scaled Landscape{..} = SigMinDist
         eM   = mfeEnergy trna - mfeEnergy frna
         eC   = centroidEnergy trna - centroidEnergy frna
         eS   = scaled frna trna
-      in  T.concat [showHdr frna n', showMut frna trna n' eM eC eS]
+      in  (T.concat [showHdr frna n', showMut frna trna n' eM eC eS], [n'])
   , fini = id
   , h    = SM.toList
   } where
@@ -175,14 +175,14 @@ aCount Landscape{..} = SigMinDist
 
 
 
-type TS1 x = TwITbl Id Unboxed EmptyOk (BS1 First I)      x
+--type TS1 x = TwITbl Id Unboxed EmptyOk (BS1 First I)      x
 type U   x = TwITbl Id Unboxed EmptyOk (Unit I)           x
-type PF  x = TwITbl Id Unboxed EmptyOk (Boundary First I) x
+--type PF  x = TwITbl Id Unboxed EmptyOk (Boundary First I) x
 
 type TS1L x = TwITbl Id Unboxed EmptyOk (BS1 Last I)      x
 type PFL  x = TwITbl Id Unboxed EmptyOk (Boundary Last I) x
 
-type BT1 x b = TwITblBt Unboxed EmptyOk (BS1 First I) x Id Id b
+--type BT1 x b = TwITblBt Unboxed EmptyOk (BS1 First I) x Id Id b
 type BTU x b = TwITblBt Unboxed EmptyOk (Unit I)      x Id Id b
 
 type BT1L x b = TwITblBt Unboxed EmptyOk (BS1 Last I) x Id Id b
@@ -204,14 +204,14 @@ forwardMinDist1 scaleFunction landscape =
         Singleton
 {-# NoInline forwardMinDist1 #-}
 
-backtrackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1L Double:.U Double -> [Text]
+backtrackMinDist1 :: ScaleFunction -> Landscape -> Z:.TS1L Double:.U Double -> [(Text,[Int])]
 backtrackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
   where !(Z:.bt1:.b) = gMinDist (aMinDist scaleFunction landscape <|| aPretty scaleFunction landscape)
                             (toBacktrack ts1 (undefined :: Id a -> Id a))
                             (toBacktrack u   (undefined :: Id a -> Id a))
                             EdgeWithSet
                             Singleton
-                        :: Z:.BT1L Double Text:.BTU Double Text
+                        :: Z:.BT1L Double (Text,[Int]):.BTU Double (Text,[Int])
 {-# NoInline backtrackMinDist1 #-}
 
 -- | Count the number of co-optimals
@@ -242,7 +242,7 @@ countBackMinDist1 scaleFunction landscape (Z:.ts1:.u) = unId $ axiom b
 -- TODO do we want this one explicitly or make life easy and just extract
 -- from all @forwardMinDist1@ paths?
 
-runCoOptDist :: ScaleFunction -> Landscape -> (Double,[Text])
+runCoOptDist :: ScaleFunction -> Landscape -> (Double,[(Text,[Int])])
 runCoOptDist scaleFunction landscape = (unId $ axiom fwdu,bs)
   where !(Z:.fwd1:.fwdu) = forwardMinDist1 scaleFunction landscape
         bs = backtrackMinDist1 scaleFunction landscape (Z:.fwd1:.fwdu)
@@ -255,21 +255,21 @@ runCount scaleFunction landscape = (unId $ axiom fwdu)
 
 -- | Extract the individual partition scores.
 
-boundaryPartFunFirst :: Maybe Int -> ScaleFunction -> Landscape -> [(Boundary First I,Log Double)]
-boundaryPartFunFirst restrictStartNode scaleFunction landscape =
-  let n       = mutationCount landscape
-      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside restrictStartNode scaleFunction landscape)
-                      (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (-999999) []))
-                      (ITbl 1 0 EmptyOk (fromAssocs (Boundary 0) (Boundary $ n-1)               (-999999) []))
-                      EdgeWithSet
-                      Singleton
-                    :: Z:.TS1 (Log Double):.PF (Log Double)
-      TW (ITbl _ _ _ pf) _ = bM
-      bs' = assocs pf
-      pssum = Numeric.Log.sum $ Prelude.map snd bs'
-      bs = Prelude.map (second (/pssum)) bs'
-  in bs
-{-# NoInline boundaryPartFunFirst #-}
+--boundaryPartFunFirst :: Maybe Int -> ScaleFunction -> Landscape -> [(Boundary First I,Log Double)]
+--boundaryPartFunFirst restrictStartNode scaleFunction landscape =
+--  let n       = mutationCount landscape
+--      (Z:.sM:.bM) = mutateTablesST $ gMinDist (aInside restrictStartNode scaleFunction landscape)
+--                      (ITbl 0 0 EmptyOk (fromAssocs (BS1 0 (-1)) (BS1 (2^n-1) (Boundary $ n-1)) (-999999) []))
+--                      (ITbl 1 0 EmptyOk (fromAssocs (Boundary 0) (Boundary $ n-1)               (-999999) []))
+--                      EdgeWithSet
+--                      Singleton
+--                    :: Z:.TS1 (Log Double):.PF (Log Double)
+--      TW (ITbl _ _ _ pf) _ = bM
+--      bs' = assocs pf
+--      pssum = Numeric.Log.sum $ Prelude.map snd bs'
+--      bs = Prelude.map (second (/pssum)) bs'
+--  in bs
+--{-# NoInline boundaryPartFunFirst #-}
 
 boundaryPartFunLast :: Maybe Int -> ScaleFunction -> Landscape -> BoundaryPart -- [(Boundary Last I,Log Double)]
 boundaryPartFunLast restrictStartNode scaleFunction landscape =

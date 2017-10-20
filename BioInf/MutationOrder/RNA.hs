@@ -10,30 +10,35 @@
 
 module BioInf.MutationOrder.RNA where
 
-import           Data.Aeson as DA
-import           Data.Bits
+import           Data.Char (toUpper)
 import           Codec.Compression.GZip (compress,decompress)
 import           Control.Arrow (second)
 import           Control.DeepSeq
+import           Control.Error
+import           Control.Monad (unless)
 import           Control.Parallel.Strategies
+import           Data.Aeson as DA
+import           Data.Bits
 import           Data.ByteString (ByteString)
+import           Data.Char (isDigit)
+import           Data.List (sort,nub,(\\))
 import           Data.Maybe (catMaybes)
+import           Data.Monoid
 import           Data.Serialize
+import           Data.Serialize.Instances
+import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import           Data.Tuple (swap)
 import           Data.Vector.Serialize
 import           Data.Vector.Strategies
 import           Debug.Trace
 import           GHC.Generics
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy as BSL
+import qualified Data.HashMap.Strict as HM
+import qualified Data.IntMap.Strict as IM
 import qualified Data.Vector as V
 import qualified Data.Vector.Unboxed as VU
 import           System.IO.Unsafe (unsafePerformIO)
-import qualified Data.HashMap.Strict as HM
-import           Data.Serialize.Instances
-import           Data.Text.Encoding (decodeUtf8, encodeUtf8)
-import           Data.Monoid
-import           Data.Char (isDigit)
-import           Data.Tuple (swap)
 
 import qualified Data.Bijection.HashMap as B
 import           BioInf.ViennaRNA.Bindings
@@ -193,6 +198,77 @@ instance FromJSON Landscape where
     landscapeDestination  <- encodeUtf8 <$> v .: "landscapeDestination"
     mutationPositions     <- v .: "mutationPositions"
     return Landscape{..}
+
+newtype Ancestral = Ancestral { getAncestral ∷ ByteString }
+
+newtype Extant = Extant { getExtant ∷ ByteString }
+
+newtype GlobalBackmutations = GlobalBackmutations { getGlobalBackmutations ∷ Int }
+
+newtype BackmutationCol = BackmutationCol Int
+
+-- | The new method for creating the RNA landscape. The outgoing stream of
+-- sequences should be directly to the 'BioInf.MutationOrder.SequenceDB'
+-- module, and 'writeSequenceFiles' in particular.
+--
+-- TODO generalise over the alphabet
+--
+-- TODO currently, the number of backmutations is either @0@ or @1@. For more,
+-- a number of things need to be fixed: (i) creation of all variants of
+-- @1,2,3...g@ backmutations. That is, consider all sequences that have at
+-- least one, but no more than @g@ global back mutations.
+--
+-- TODO this will create duplicate sequences for those columns where the
+-- ancestral and extant have different nucleotides during global backmutation
+-- generation.
+
+createRNAlandscape2
+  ∷ (Monad m)
+  ⇒ [Char]
+  → Either GlobalBackmutations [Int]
+  → [BackmutationCol]
+  → Ancestral
+  → Extant
+  → ExceptT String m (Int,[ByteString], [(Int,Char,[ByteString])])
+  -- ^ Return A complex triple with (total sequence count, original problem
+  -- sequences, list of global variants). The list of global variants holds for
+  -- each (index,single nucleotide intermediate, list of variant sequences).
+createRNAlandscape2 alphabet gxorgs bs (Ancestral a) (Extant e) = do
+  -- some sanity checks
+  unless (BS.length a == BS.length e) $ throwE "different sequence lengths encountered"
+  -- expand later! Right now, we either generate the 
+  unless (either ((<=1) . getGlobalBackmutations) ((<=1) . length) gxorgs)
+          $ throwE "we currently allow *at most* one globally active backmutation"
+  -- TODO need to fix up interesting columns
+  unless (null bs) $ throwE "fix up interesting columns"
+  -- collect the possible characters for each position.
+  let ahm = IM.fromList . zip [0∷Int ..] . map ((:[]) . toUpper) $ BS.unpack a
+  let ehm = IM.fromList . zip [0..] . map ( (:[]) . toUpper) $ BS.unpack e
+  -- back mutation columns are active together with the above
+  let bhm = IM.fromListWith (++) [ (k,alphabet) | BackmutationCol k ← bs ]
+  let merge x y = sort . nub $ x++y
+  let hm = IM.unionWith merge (IM.unionWith merge ahm ehm) bhm
+  -- global back mutations, this will introduce only those characters not already present in each column
+  let gbm = IM.fromList [ (k, alphabet \\ hm IM.! k)
+                        | k ← either (\_ → [0..BS.length a -1]) id gxorgs ]
+  -- begin with the set of sequences without any global backmutations
+  let localList = map BS.pack . sequence . map snd . IM.toAscList
+  let localCount = product . map (length . snd) $ IM.toAscList hm -- do *not* count explicitly!
+  let globalModifiers = concat . map (\(k,xs) → map (k,) xs) $ IM.toAscList gbm
+  -- we now repeat the local generation, but "splice in" the globally modified characters
+  -- TODO we currently allow exactly one global modifier in @[(k,z)]@
+  let globals = if True -- g == 1 -- TODO need to fix up
+                  then [ (k, z, [ BS.take k orig `BS.append` (BS.cons z (BS.drop (k+1) orig))
+                                | orig ← localList hm
+                                -- produce a sequence only if this mutation is
+                                -- independent of the a/e mutations OR we look
+                                -- at a variant or the ancestral sequence. This
+                                -- prevents duplicate entries.
+                                , (a `BS.index` k == e `BS.index` k) || (a `BS.index` k == orig `BS.index` k)  ] )
+                       | (k,z) ← globalModifiers ]
+                  else []
+  let globalCount = localCount * length globalModifiers -- if g == 1 then localCount * length globalModifiers else 0
+  return $ (localCount + globalCount, localList hm, globals)
 
 -- |
 --

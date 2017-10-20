@@ -1,3 +1,9 @@
+0.0.1.0
+-------
+
+- new model that includes back-mutations (up to a small constant number)
+- compensatory mutations
+
 0.0.0.2
 -------
 
