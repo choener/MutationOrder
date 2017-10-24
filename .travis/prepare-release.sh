@@ -8,8 +8,6 @@ rm -fr build
 mkdir -p $D
 # copy executable(s)
 cp `find dist-newstyle -executable -type f -name MutationOrder` $D
-# copy data
-cp -r data $D
 # prepare tar.gz
 cd build
 tar czf $B.tgz $B
